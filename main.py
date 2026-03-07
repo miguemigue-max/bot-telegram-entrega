@@ -4,16 +4,14 @@ import os
 import time
 
 # ==========================================
-# 1. CONFIGURACIÓN (CONEXIÓN SEGURA)
+# 1. CONFIGURACIÓN
 # ==========================================
 apihelper.proxy = {'https': 'http://proxy.server:3128'}
-
-# REVISA QUE ESTE ID SEA EL TUYO (Puedes verlo al escribirle al bot)
 TOKEN = "8033243001:AAFZMqr1GiHAE0mAF25yRcrfLNPp3H-nnv0"
 ADMIN_ID = "5220834019" 
 bot = telebot.TeleBot(TOKEN)
 
-# Archivos de Base de Datos
+# Archivos
 DB_FILE = "banco.txt"
 TASA_IN_FILE = "tasa_in.txt"
 TASA_OUT_FILE = "tasa_out.txt"
@@ -24,7 +22,7 @@ SEGURIDAD_FILE = "seguridad.txt"
 depositos_pendientes = {}
 
 # ==========================================
-# 2. FUNCIONES DE BASE DE DATOS
+# 2. FUNCIONES DE DATOS
 # ==========================================
 def leer_datos():
     usuarios = {}
@@ -38,8 +36,7 @@ def leer_datos():
 
 def guardar_datos(usuarios):
     with open(DB_FILE, "w") as f:
-        for uid, s in usuarios.items():
-            f.write(f"{uid}:{s}\n")
+        for uid, s in usuarios.items(): f.write(f"{uid}:{s}\n")
 
 def leer_tasas():
     t_in, t_out = 510.0, 490.0
@@ -66,16 +63,14 @@ def guardar_seguridad(uid, pin, intentos, estado):
                 datos[p[0]] = p[1:]
     datos[str(uid)] = [str(pin), str(intentos), estado]
     with open(SEGURIDAD_FILE, "w") as f:
-        for u, d in datos.items():
-            f.write(f"{u}|{'|'.join(d)}\n")
+        for u, d in datos.items(): f.write(f"{u}|{'|'.join(d)}\n")
 
 def registrar_movimiento(uid, tipo, monto, detalle):
     fecha = time.strftime("%d/%m %H:%M")
-    with open(HISTORIAL_FILE, "a") as f:
-        f.write(f"{uid}|{fecha}|{tipo}|{monto}|{detalle}\n")
+    with open(HISTORIAL_FILE, "a") as f: f.write(f"{uid}|{fecha}|{tipo}|{monto}|{detalle}\n")
 
 # ==========================================
-# 3. MENÚS
+# 3. MENÚS DINÁMICOS
 # ==========================================
 def menu_usuario():
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -88,34 +83,29 @@ def menu_admin():
     return markup
 
 # ==========================================
-# 4. HANDLERS (START Y ADMIN)
+# 4. HANDLERS DE COMANDOS
 # ==========================================
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = str(message.from_user.id)
-    # Esto te servirá para confirmar tu ID en la consola de PythonAnywhere
-    print(f"DEBUG: El usuario {message.from_user.first_name} tiene ID: {uid}")
-    
     _, _, estado = leer_seguridad(uid)
     if estado == "SUSPENDIDO":
-        bot.send_message(message.chat.id, "❌ Cuenta suspendida.")
+        bot.send_message(message.chat.id, "❌ Cuenta bloqueada.")
         return
-
     bot.send_message(message.chat.id, "🏦 **MBanks**", reply_markup=menu_usuario())
 
 @bot.message_handler(commands=['admin'])
-def admin_command(message):
-    uid = str(message.from_user.id)
-    if uid == ADMIN_ID:
-        bot.send_message(message.chat.id, "🛠 **Panel de Administrador**", reply_markup=menu_admin())
+def admin_cmd(message):
+    if str(message.from_user.id) == ADMIN_ID:
+        bot.send_message(message.chat.id, "🛠 **MODO ADMINISTRADOR**", reply_markup=menu_admin())
     else:
-        bot.send_message(message.chat.id, "❌ No tienes permisos de administrador.")
+        bot.send_message(message.chat.id, "❌ Acceso denegado.")
 
 # ==========================================
-# 5. DEPÓSITOS Y CALLBACKS
+# 5. CALLBACKS (BOTONES)
 # ==========================================
 @bot.callback_query_handler(func=lambda call: True)
-def callbacks(call):
+def callback_handler(call):
     uid = str(call.from_user.id)
     
     if call.data == "iniciar_deposito":
@@ -130,8 +120,14 @@ def callbacks(call):
         bot.send_message(target, f"✅ Depósito aprobado: +${m_usd} USD.")
         bot.edit_message_caption("✅ APROBADO", call.message.chat.id, call.message.message_id)
     
+    elif call.data == "entrar_admin":
+        bot.send_message(call.message.chat.id, "🛠 Entrando al panel...", reply_markup=menu_admin())
+
     bot.answer_callback_query(call.id)
 
+# ==========================================
+# 6. LÓGICA DE DEPÓSITOS
+# ==========================================
 def dep_paso2(message):
     try:
         cup = float(message.text)
@@ -152,12 +148,12 @@ def dep_paso3(message):
         bot.send_message(message.chat.id, "✅ Enviado.")
 
 # ==========================================
-# 6. LÓGICA PRINCIPAL
+# 7. MANEJADOR PRINCIPAL (TEXTO)
 # ==========================================
 @bot.message_handler(func=lambda m: True)
-def principal(message):
+def text_handler(message):
     uid = str(message.from_user.id)
-    pin_real, intentos, estado = leer_seguridad(uid)
+    _, _, estado = leer_seguridad(uid)
 
     if estado == "SUSPENDIDO":
         bot.send_message(message.chat.id, "❌ Cuenta bloqueada.")
@@ -168,8 +164,24 @@ def principal(message):
         mk = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Depositar", callback_data="iniciar_deposito"))
         bot.send_message(message.chat.id, f"Saldo: ${s} USD", reply_markup=mk)
 
+    elif message.text == '🧾 Mi Extracto':
+        txt = "🧾 **EXTRACTO**\n"
+        if os.path.exists(HISTORIAL_FILE):
+            with open(HISTORIAL_FILE, "r") as f:
+                for l in f:
+                    if l.startswith(uid): txt += f"• {l.split('|')[1]}: {l.split('|')[2]} ${l.split('|')[3]}\n"
+        bot.send_message(message.chat.id, txt)
+
+    elif message.text == '⚙️ Ajustes':
+        mk = types.InlineKeyboardMarkup()
+        mk.add(types.InlineKeyboardButton("Cambiar PIN", callback_data="cambiar_pin"))
+        # Si eres tú, te sale el botón secreto de Admin aquí
+        if uid == ADMIN_ID:
+            mk.add(types.InlineKeyboardButton("🛠 PANEL ADMIN", callback_data="entrar_admin"))
+        bot.send_message(message.chat.id, "⚙️ Ajustes de cuenta:", reply_markup=mk)
+
     elif message.text == '🏠 Menú Usuario':
-        bot.send_message(message.chat.id, "Menú principal", reply_markup=menu_usuario())
+        bot.send_message(message.chat.id, "Cambiando a vista de usuario...", reply_markup=menu_usuario())
 
     elif message.text == '💳 Balance CUP' and uid == ADMIN_ID:
         total = 0
@@ -178,3 +190,28 @@ def principal(message):
                 for l in f:
                     if "Depósito" in l:
                         try: total += float(l.split("|")[4].split(":")[1])
+                        except: pass
+        bot.send_message(ADMIN_ID, f"💰 **Total en Cuba:** {total:.2f} CUP")
+
+    elif message.text == '🔓 Desbloquear ID' and uid == ADMIN_ID:
+        msg = bot.send_message(ADMIN_ID, "Escribe el ID a desbloquear:")
+        bot.register_next_step_handler(msg, unlock_logic)
+
+def unlock_logic(message):
+    guardar_seguridad(message.text, "000010", 0, "ACTIVO")
+    bot.send_message(ADMIN_ID, f"✅ ID {message.text} reseteado a 000010.")
+
+# ==========================================
+# 8. BUCLE DE RECONEXIÓN
+# ==========================================
+def run_bot():
+    while True:
+        try:
+            print("Bot Activo...")
+            bot.polling(none_stop=True, timeout=30)
+        except Exception as e:
+            print(f"Error: {e}. Reintentando...")
+            time.sleep(10)
+
+if __name__ == "__main__":
+    run_bot()
