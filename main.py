@@ -12,7 +12,7 @@ apihelper.proxy = {
     'https': 'http://proxy.server:3128'
 }
 
-TOKEN = "PON_AQUI_TU_TOKEN_NUEVO"
+TOKEN = "8033243001:AAFZMqr1GiHAE0mAF25yRcrfLNPp3H-nnv0"
 ADMIN_ID = 5220834019  # mejor como int
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
