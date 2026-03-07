@@ -12,7 +12,7 @@ apihelper.proxy = {
     "https": "http://proxy.server:3128",
 }
 
-TOKEN = os.getenv("8033243001:AAFZMqr1GiHAE0mAF25yRcrfLNPp3H-nnv0")
+TOKEN = "8033243001:AAFZMqr1GiHAE0mAF25yRcrfLNPp3H-nnv0"
 ADMIN_ID = 5220834019
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -693,7 +693,21 @@ def paso_comprobante_deposito(message, monto):
 
     caption = (
         "📥 <b>Nuevo depósito pendiente</b>\n\n"
-        f"ID depósito: <code>{deposit_id}</
+        f"ID depósito: <code>{deposit_id}</code>\n"
+        f"Usuario: <code>{uid}</code>\n"
+        f"Nombre: <b>{nombre}</b>\n"
+        f"Username: @{username if username else 'sin_username'}\n"
+        f"Monto: <b>${monto:.2f} USD</b>\n"
+        f"Fecha: {timestamp()}"
+    )
+
+    bot.send_photo(ADMIN_ID, photo_file_id, caption=caption, reply_markup=mk)
+    bot.send_message(
+        message.chat.id,
+        "📨 Comprobante enviado al administrador.\nTu depósito quedó pendiente de aprobación.",
+        reply_markup=menu_usuario()
+    )
+    agregar_historial(uid, f"Depósito solicitado por ${monto:.2f} USD - pendiente")
 
 # =========================================================
 # EXTRACTO
