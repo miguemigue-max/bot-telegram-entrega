@@ -13,7 +13,7 @@ apihelper.proxy = {
 }
 
 # Recomendado: variable de entorno MBANKS_BOT_TOKEN
-TOKEN = os.getenv("MBANKS_BOT_TOKEN", "PON_AQUI_TU_TOKEN_NUEVO")
+TOKEN = "8033243001:AAFZMqr1GiHAE0mAF25yRcrfLNPp3H-nnv0"
 ADMIN_ID = 5220834019
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
