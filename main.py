@@ -13,16 +13,12 @@ bot = telebot.TeleBot(TOKEN)
 
 # Archivos
 DB_FILE = "banco.txt"
-TASA_IN_FILE = "tasa_in.txt"
-TASA_OUT_FILE = "tasa_out.txt"
 PERFILES_FILE = "perfiles.txt"
 HISTORIAL_FILE = "historial.txt"
 SEGURIDAD_FILE = "seguridad.txt"
 
-depositos_pendientes = {}
-
 # ==========================================
-# 2. FUNCIONES DE DATOS
+# 2. FUNCIONES DE APOYO
 # ==========================================
 def leer_datos():
     usuarios = {}
@@ -37,14 +33,6 @@ def leer_datos():
 def guardar_datos(usuarios):
     with open(DB_FILE, "w") as f:
         for uid, s in usuarios.items(): f.write(f"{uid}:{s}\n")
-
-def leer_tasas():
-    t_in, t_out = 510.0, 490.0
-    if os.path.exists(TASA_IN_FILE):
-        with open(TASA_IN_FILE, "r") as f: t_in = float(f.read().strip())
-    if os.path.exists(TASA_OUT_FILE):
-        with open(TASA_OUT_FILE, "r") as f: t_out = float(f.read().strip())
-    return t_in, t_out
 
 def leer_seguridad(uid):
     if os.path.exists(SEGURIDAD_FILE):
@@ -65,12 +53,8 @@ def guardar_seguridad(uid, pin, intentos, estado):
     with open(SEGURIDAD_FILE, "w") as f:
         for u, d in datos.items(): f.write(f"{u}|{'|'.join(d)}\n")
 
-def registrar_movimiento(uid, tipo, monto, detalle):
-    fecha = time.strftime("%d/%m %H:%M")
-    with open(HISTORIAL_FILE, "a") as f: f.write(f"{uid}|{fecha}|{tipo}|{monto}|{detalle}\n")
-
 # ==========================================
-# 3. MENÚS DINÁMICOS
+# 3. MENÚS
 # ==========================================
 def menu_usuario():
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -83,135 +67,133 @@ def menu_admin():
     return markup
 
 # ==========================================
-# 4. HANDLERS DE COMANDOS
-# ==========================================
-@bot.message_handler(commands=['start'])
-def start(message):
-    uid = str(message.from_user.id)
-    _, _, estado = leer_seguridad(uid)
-    if estado == "SUSPENDIDO":
-        bot.send_message(message.chat.id, "❌ Cuenta bloqueada.")
-        return
-    bot.send_message(message.chat.id, "🏦 **MBanks**", reply_markup=menu_usuario())
-
-@bot.message_handler(commands=['admin'])
-def admin_cmd(message):
-    if str(message.from_user.id) == ADMIN_ID:
-        bot.send_message(message.chat.id, "🛠 **MODO ADMINISTRADOR**", reply_markup=menu_admin())
-    else:
-        bot.send_message(message.chat.id, "❌ Acceso denegado.")
-
-# ==========================================
-# 5. CALLBACKS (BOTONES)
+# 4. MANEJO DE BOTONES (CALLBACKS)
 # ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     uid = str(call.from_user.id)
     
-    if call.data == "iniciar_deposito":
-        msg = bot.send_message(call.message.chat.id, "💰 ¿Cuánto CUP vas a depositar?")
-        bot.register_next_step_handler(msg, dep_paso2)
-    
-    elif call.data.startswith("apr_"):
-        if uid != ADMIN_ID: return
-        _, target, m_usd, m_cup = call.data.split("_")
-        u = leer_datos(); u[target] = u.get(target, 0) + float(m_usd); guardar_datos(u)
-        registrar_movimiento(target, "Depósito", m_usd, f"CUP:{m_cup}")
-        bot.send_message(target, f"✅ Depósito aprobado: +${m_usd} USD.")
-        bot.edit_message_caption("✅ APROBADO", call.message.chat.id, call.message.message_id)
+    if call.data == "cambiar_pin":
+        msg = bot.send_message(call.message.chat.id, "🔑 Introduce tu PIN actual para validar:")
+        bot.register_next_step_handler(msg, validar_pin_viejo)
     
     elif call.data == "entrar_admin":
-        bot.send_message(call.message.chat.id, "🛠 Entrando al panel...", reply_markup=menu_admin())
-
+        if uid == ADMIN_ID:
+            bot.send_message(call.message.chat.id, "🛠 Accediendo al Panel...", reply_markup=menu_admin())
+    
     bot.answer_callback_query(call.id)
 
 # ==========================================
-# 6. LÓGICA DE DEPÓSITOS
+# 5. LÓGICA DE CAMBIO DE PIN
 # ==========================================
-def dep_paso2(message):
-    try:
-        cup = float(message.text)
-        t_in, _ = leer_tasas()
-        usd = round(cup / t_in, 2)
-        depositos_pendientes[str(message.from_user.id)] = {'c': cup, 'u': usd}
-        bot.send_message(message.chat.id, f"Recibirás: ${usd} USD.\nEnvía FOTO del comprobante:")
-        bot.register_next_step_handler(message, dep_paso3)
-    except: bot.send_message(message.chat.id, "❌ Usa solo números.")
-
-def dep_paso3(message):
+def validar_pin_viejo(message):
     uid = str(message.from_user.id)
-    if message.content_type == 'photo':
-        d = depositos_pendientes[uid]
-        mk = types.InlineKeyboardMarkup()
-        mk.add(types.InlineKeyboardButton("Aprobar", callback_data=f"apr_{uid}_{d['u']}_{d['c']}"))
-        bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"ID: {uid} | {d['c']} CUP", reply_markup=mk)
-        bot.send_message(message.chat.id, "✅ Enviado.")
+    pin_real, _, _ = leer_seguridad(uid)
+    if message.text == pin_real:
+        msg = bot.send_message(message.chat.id, "✅ Correcto. Introduce tu NUEVO PIN (Solo números):")
+        bot.register_next_step_handler(msg, finalizar_cambio_pin)
+    else:
+        bot.send_message(message.chat.id, "❌ PIN incorrecto. Operación cancelada.")
+
+def finalizar_cambio_pin(message):
+    if message.text.isdigit() and len(message.text) >= 4:
+        guardar_seguridad(message.from_user.id, message.text, 0, "ACTIVO")
+        bot.send_message(message.chat.id, "✅ PIN actualizado con éxito.")
+    else:
+        bot.send_message(message.chat.id, "❌ El PIN debe ser numérico y de al menos 4 dígitos.")
 
 # ==========================================
-# 7. MANEJADOR PRINCIPAL (TEXTO)
+# 6. MANEJADOR PRINCIPAL
 # ==========================================
 @bot.message_handler(func=lambda m: True)
-def text_handler(message):
+def principal(message):
     uid = str(message.from_user.id)
-    _, _, estado = leer_seguridad(uid)
+    pin_real, intentos, estado = leer_seguridad(uid)
 
     if estado == "SUSPENDIDO":
-        bot.send_message(message.chat.id, "❌ Cuenta bloqueada.")
+        bot.send_message(message.chat.id, "❌ Tu cuenta está suspendida. Contacta al administrador.")
         return
 
     if message.text == '💰 Mi Saldo':
         s = leer_datos().get(uid, 0.0)
-        mk = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Depositar", callback_data="iniciar_deposito"))
-        bot.send_message(message.chat.id, f"Saldo: ${s} USD", reply_markup=mk)
+        bot.send_message(message.chat.id, f"💵 Saldo actual: **${s:.2f} USD**", parse_mode="Markdown")
 
     elif message.text == '🧾 Mi Extracto':
-        txt = "🧾 **EXTRACTO**\n"
+        txt = "🧾 **TUS ÚLTIMOS MOVIMIENTOS**\n\n"
+        encontrado = False
         if os.path.exists(HISTORIAL_FILE):
             with open(HISTORIAL_FILE, "r") as f:
-                for l in f:
-                    if l.startswith(uid): txt += f"• {l.split('|')[1]}: {l.split('|')[2]} ${l.split('|')[3]}\n"
-        bot.send_message(message.chat.id, txt)
+                for linea in f:
+                    if linea.startswith(uid):
+                        p = linea.strip().split("|")
+                        txt += f"📅 {p[1]} | {p[2]} | **${p[3]}**\n"
+                        encontrado = True
+        bot.send_message(message.chat.id, txt if encontrado else "No tienes movimientos registrados.", parse_mode="Markdown")
+
+    elif message.text == '💸 Transferir':
+        msg = bot.send_message(message.chat.id, "👤 Indica el ID del destinatario:")
+        bot.register_next_step_handler(msg, trans_paso1)
 
     elif message.text == '⚙️ Ajustes':
         mk = types.InlineKeyboardMarkup()
-        mk.add(types.InlineKeyboardButton("Cambiar PIN", callback_data="cambiar_pin"))
-        # Si eres tú, te sale el botón secreto de Admin aquí
+        mk.add(types.InlineKeyboardButton("🔑 Cambiar PIN", callback_data="cambiar_pin"))
+        # El botón de Admin SOLO aparece si tu ID coincide con ADMIN_ID
         if uid == ADMIN_ID:
             mk.add(types.InlineKeyboardButton("🛠 PANEL ADMIN", callback_data="entrar_admin"))
-        bot.send_message(message.chat.id, "⚙️ Ajustes de cuenta:", reply_markup=mk)
+        bot.send_message(message.chat.id, "⚙️ **AJUSTES DE CUENTA**", reply_markup=mk, parse_mode="Markdown")
 
     elif message.text == '🏠 Menú Usuario':
-        bot.send_message(message.chat.id, "Cambiando a vista de usuario...", reply_markup=menu_usuario())
+        bot.send_message(message.chat.id, "Volviendo...", reply_markup=menu_usuario())
 
-    elif message.text == '💳 Balance CUP' and uid == ADMIN_ID:
-        total = 0
-        if os.path.exists(HISTORIAL_FILE):
-            with open(HISTORIAL_FILE, "r") as f:
-                for l in f:
-                    if "Depósito" in l:
-                        try: total += float(l.split("|")[4].split(":")[1])
-                        except: pass
-        bot.send_message(ADMIN_ID, f"💰 **Total en Cuba:** {total:.2f} CUP")
-
+    # Funciones de Admin
     elif message.text == '🔓 Desbloquear ID' and uid == ADMIN_ID:
-        msg = bot.send_message(ADMIN_ID, "Escribe el ID a desbloquear:")
-        bot.register_next_step_handler(msg, unlock_logic)
-
-def unlock_logic(message):
-    guardar_seguridad(message.text, "000010", 0, "ACTIVO")
-    bot.send_message(ADMIN_ID, f"✅ ID {message.text} reseteado a 000010.")
+        msg = bot.send_message(message.chat.id, "Escribe el ID a desbloquear:")
+        bot.register_next_step_handler(msg, admin_desbloqueo)
 
 # ==========================================
-# 8. BUCLE DE RECONEXIÓN
+# 7. FUNCIONES DE TRANSFERENCIA
 # ==========================================
-def run_bot():
+def trans_paso1(message):
+    dest = message.text
+    msg = bot.send_message(message.chat.id, "¿Cuánto quieres transferir (USD)?")
+    bot.register_next_step_handler(msg, trans_paso2, dest)
+
+def trans_paso2(message, dest):
+    try:
+        monto = float(message.text)
+        msg = bot.send_message(message.chat.id, "🔒 Introduce tu PIN para confirmar:")
+        bot.register_next_step_handler(msg, trans_final, dest, monto)
+    except: bot.send_message(message.chat.id, "❌ Cantidad no válida.")
+
+def trans_final(message, dest, monto):
+    uid = str(message.from_user.id)
+    pin_real, intentos, _ = leer_seguridad(uid)
+    if message.text == pin_real:
+        u = leer_datos()
+        if u.get(uid, 0) >= monto:
+            u[uid] -= monto; u[dest] = u.get(dest, 0) + monto; guardar_datos(u)
+            guardar_seguridad(uid, pin_real, 0, "ACTIVO")
+            bot.send_message(message.chat.id, "✅ Transferencia enviada con éxito.")
+            bot.send_message(dest, f"💰 Has recibido ${monto} USD de ID: {uid}")
+        else: bot.send_message(message.chat.id, "❌ Saldo insuficiente.")
+    else:
+        intentos += 1
+        est = "SUSPENDIDO" if intentos >= 3 else "ACTIVO"
+        guardar_seguridad(uid, pin_real, intentos, est)
+        bot.send_message(message.chat.id, f"❌ PIN incorrecto. Intentos: {intentos}/3")
+
+def admin_desbloqueo(message):
+    target = message.text
+    guardar_seguridad(target, "000010", 0, "ACTIVO")
+    bot.send_message(ADMIN_ID, f"✅ ID {target} activado. PIN: 000010")
+
+# ==========================================
+# INICIO
+# ==========================================
+if __name__ == "__main__":
     while True:
         try:
-            print("Bot Activo...")
-            bot.polling(none_stop=True, timeout=30)
+            print("MBanks Operativo...")
+            bot.polling(none_stop=True, timeout=40)
         except Exception as e:
-            print(f"Error: {e}. Reintentando...")
             time.sleep(10)
-
-if __name__ == "__main__":
-    run_bot()
