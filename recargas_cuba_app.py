@@ -1211,6 +1211,195 @@ nubank-strip{
   to{opacity:1;transform:translateY(0)}
 }
 
+.profile-page{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at top left, rgba(138,5,190,0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(182,92,255,0.06), transparent 24%),
+    linear-gradient(180deg, #f5f3ef 0%, #edf2f3 100%);
+  padding:24px 0 40px;
+}
+
+.profile-topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:18px;
+}
+
+.profile-top-btn,
+.profile-upgrade-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:64px;
+  height:58px;
+  padding:0 22px;
+  border-radius:30px;
+  background:rgba(255,255,255,0.72);
+  border:1px solid rgba(0,0,0,0.06);
+  box-shadow:0 10px 24px rgba(0,0,0,0.05);
+  color:#111;
+  font-weight:800;
+  text-decoration:none;
+}
+
+.profile-upgrade-btn{
+  min-width:auto;
+}
+
+.profile-header-card{
+  text-align:center;
+  padding:10px 0 18px;
+}
+
+.profile-avatar-wrap{
+  display:flex;
+  justify-content:center;
+  margin-bottom:16px;
+}
+
+.profile-avatar-img,
+.profile-avatar-fallback{
+  width:118px;
+  height:118px;
+  border-radius:50%;
+  object-fit:cover;
+  box-shadow:0 10px 24px rgba(0,0,0,0.08);
+}
+
+.profile-avatar-fallback{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#8A05BE,#B65CFF);
+  color:white;
+  font-size:2rem;
+  font-weight:900;
+}
+
+.profile-name{
+  margin:0 0 10px;
+  font-size:clamp(2rem, 6vw, 3rem);
+  line-height:1;
+  letter-spacing:-0.04em;
+  font-weight:900;
+  color:#171717;
+}
+
+.profile-tag-line{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+  color:#202020;
+  font-size:1.05rem;
+  font-weight:700;
+}
+
+.profile-tag-icon{
+  font-size:1.1rem;
+  color:#666;
+}
+
+.profile-mini-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin:22px 0;
+}
+
+.profile-mini-card{
+  background:rgba(255,255,255,0.85);
+  border-radius:28px;
+  padding:26px;
+  min-height:158px;
+  box-shadow:0 12px 28px rgba(0,0,0,0.05);
+  border:1px solid rgba(0,0,0,0.05);
+}
+
+.profile-mini-icon{
+  font-size:2rem;
+  margin-bottom:28px;
+}
+
+.profile-mini-title{
+  font-size:1rem;
+  font-weight:900;
+  color:#171717;
+}
+
+.profile-mini-sub{
+  color:#6f6f7b;
+  margin-top:4px;
+  font-size:0.98rem;
+}
+
+.profile-section-card{
+  background:rgba(255,255,255,0.88);
+  border-radius:28px;
+  padding:24px;
+  margin-bottom:18px;
+  box-shadow:0 12px 28px rgba(0,0,0,0.05);
+  border:1px solid rgba(0,0,0,0.05);
+}
+
+.profile-section-title{
+  font-size:1.1rem;
+  font-weight:900;
+  color:#171717;
+  margin-bottom:12px;
+}
+
+.profile-item-row,
+.profile-balance-row,
+.profile-link-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  padding:16px 0;
+  border-bottom:1px solid rgba(0,0,0,0.06);
+  color:#202020;
+}
+
+.profile-item-row:last-child,
+.profile-balance-row:last-child,
+.profile-link-row:last-child{
+  border-bottom:none;
+}
+
+.profile-item-row span,
+.profile-balance-row span{
+  color:#6f6f7b;
+}
+
+.profile-link-row{
+  text-decoration:none;
+  font-weight:800;
+}
+
+.profile-form{
+  display:grid;
+  gap:14px;
+}
+
+@media (max-width:640px){
+  .profile-mini-grid{
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+
+  .profile-mini-card{
+    min-height:146px;
+    padding:22px;
+  }
+
+  .profile-name{
+    font-size:2.2rem;
+  }
+}
+
   </style>
 </head>
 <script>
@@ -1876,82 +2065,137 @@ def profile():
     profile_photo_url = url_for("uploaded_file", filename=os.path.basename(user["profile_photo"])) if user["profile_photo"] else None
 
     content = """
-    <div class="page-wrap">
-      <div class="container">
-        <div class="grid-2">
-          <div class="panel">
-            <h2>Mi perfil</h2>
-            <div class="subtitle" style="margin-bottom:18px;">Datos protegidos de tu cuenta digital.</div>
+    <section class="profile-page">
+      <div class="container" style="max-width:760px;">
 
-            <form method="post" enctype="multipart/form-data">
-              <div>
-                <label>Nombre</label>
-                <input value="{{ user['first_name'] }}" disabled>
+        <div class="profile-topbar">
+          <a href="{{ url_for('home') }}" class="profile-top-btn">✕</a>
+          <a href="{{ url_for('referrals_page') }}" class="profile-upgrade-btn">Invitar</a>
+        </div>
+
+        <div class="profile-header-card">
+          <div class="profile-avatar-wrap">
+            {% if profile_photo_url %}
+              <img src="{{ profile_photo_url }}" alt="Foto de perfil" class="profile-avatar-img">
+            {% else %}
+              <div class="profile-avatar-fallback">
+                {{ user['first_name'][0] }}{{ user['last_name'][0] }}
               </div>
-
-              <div>
-                <label>Apellidos</label>
-                <input value="{{ user['last_name'] }}" disabled>
-              </div>
-
-              <div>
-                <label>Carnet</label>
-                <input value="{{ masked_carnet }}" disabled>
-              </div>
-
-              <div>
-                <label>@tag</label>
-                <input value="{{ user['profile_tag'] }}" disabled>
-              </div>
-
-              <div>
-                <label>Ciudad</label>
-                <select name="city" required>
-                  {% for city in cities %}
-                    <option value="{{ city }}" {% if user['city'] == city %}selected{% endif %}>{{ city }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-
-              <div>
-                <label>Foto de perfil</label>
-                <input type="file" name="profile_photo">
-              </div>
-
-              <button class="btn btn-primary" type="submit">Guardar cambios</button>
-            </form>
+            {% endif %}
           </div>
 
-          <div class="panel">
-            <h2>Resumen rápido</h2>
-            <div class="wallet-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
-              <div class="wallet-box">
-                <div class="wallet-label">USD</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">CUP</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">Bonus USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
-              </div>
-            </div>
+          <h1 class="profile-name">
+            {{ user['first_name']|upper }} {{ user['last_name']|upper }}
+          </h1>
 
-            <div class="subtitle" style="margin-top:16px;">
-              Correo: {{ user["email"] }}<br>
-              Código de referido: <strong>{{ user["referral_code"] }}</strong>
-            </div>
+          <div class="profile-tag-line">
+            {{ user['profile_tag'] }}
+            <span class="profile-tag-icon">⌁</span>
           </div>
         </div>
+
+        <div class="profile-mini-grid">
+          <div class="profile-mini-card">
+            <div class="profile-mini-icon">◫</div>
+            <div class="profile-mini-title">Cuenta</div>
+            <div class="profile-mini-sub">Tu perfil</div>
+          </div>
+
+          <a href="{{ url_for('referrals_page') }}" class="profile-mini-card" style="text-decoration:none;color:inherit;">
+            <div class="profile-mini-icon">👥</div>
+            <div class="profile-mini-title">Invitar amigos</div>
+            <div class="profile-mini-sub">Gana bonus en USDT</div>
+          </a>
+        </div>
+
+        <div class="profile-section-card">
+          <div class="profile-section-title">Cuenta</div>
+
+          <div class="profile-item-row">
+            <span>Correo</span>
+            <strong>{{ user['email'] }}</strong>
+          </div>
+
+          <div class="profile-item-row">
+            <span>Ciudad</span>
+            <strong>{{ user['city'] }}</strong>
+          </div>
+
+          <div class="profile-item-row">
+            <span>Carnet</span>
+            <strong>{{ masked_carnet }}</strong>
+          </div>
+
+          <div class="profile-item-row">
+            <span>Código de referido</span>
+            <strong>{{ user['referral_code'] }}</strong>
+          </div>
+        </div>
+
+        <div class="profile-section-card">
+          <div class="profile-section-title">Saldos</div>
+
+          <div class="profile-balance-row">
+            <span>USD</span>
+            <strong>{{ "%.2f"|format(wallet["usd_balance"]) }}</strong>
+          </div>
+
+          <div class="profile-balance-row">
+            <span>USDT</span>
+            <strong>{{ "%.2f"|format(wallet["usdt_balance"]) }}</strong>
+          </div>
+
+          <div class="profile-balance-row">
+            <span>CUP</span>
+            <strong>{{ "%.2f"|format(wallet["cup_balance"]) }}</strong>
+          </div>
+
+          <div class="profile-balance-row">
+            <span>Bonus USDT</span>
+            <strong>{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</strong>
+          </div>
+        </div>
+
+        <div class="profile-section-card">
+          <div class="profile-section-title">Editar perfil visible</div>
+
+          <form method="post" enctype="multipart/form-data" class="profile-form">
+            <div>
+              <label>Ciudad</label>
+              <select name="city" required>
+                {% for city in cities %}
+                  <option value="{{ city }}" {% if user['city'] == city %}selected{% endif %}>{{ city }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label>Foto de perfil</label>
+              <input type="file" name="profile_photo">
+            </div>
+
+            <button class="btn btn-primary" type="submit">Guardar cambios</button>
+          </form>
+        </div>
+
+        <div class="profile-section-card">
+          <div class="profile-section-title">Seguridad</div>
+
+          <a class="profile-link-row" href="{{ url_for('forgot_password') }}">
+            <span>Recuperar contraseña</span>
+            <span>›</span>
+          </a>
+
+          <a class="profile-link-row" href="{{ url_for('logout') }}">
+            <span>Cerrar sesión</span>
+            <span>›</span>
+          </a>
+        </div>
+
       </div>
-    </div>
+    </section>
     """
+
     return render_page(
         content,
         title="Mi perfil",
