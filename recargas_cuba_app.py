@@ -2631,3 +2631,132 @@ def withdraw_page():
         usdt_sell=usdt_sell
     )
 
+@app.route("/convert", methods=["GET", "POST"])
+@login_required
+def convert_page():
+
+    user = current_user()
+    wallet = get_wallet(user["id"])
+    settings = get_settings()
+
+    usd_buy = parse_float(settings.get("usd_buy_cup", "510"))
+    usd_sell = parse_float(settings.get("usd_sell_cup", "490"))
+
+    usdt_buy = parse_float(settings.get("usdt_buy_cup", "585"))
+    usdt_sell = parse_float(settings.get("usdt_sell_cup", "575"))
+
+    usd_usdt = parse_float(settings.get("usd_to_usdt", "1"))
+    usdt_usd = parse_float(settings.get("usdt_to_usd", "1"))
+
+    if request.method == "POST":
+
+        from_currency = request.form.get("from_currency")
+        to_currency = request.form.get("to_currency")
+        amount = parse_float(request.form.get("amount"), 0)
+
+        if amount <= 0:
+            flash("Monto inválido.", "error")
+            return redirect(url_for("convert_page"))
+
+        if not can_debit_wallet(user["id"], from_currency, amount):
+            flash("Saldo insuficiente.", "error")
+            return redirect(url_for("convert_page"))
+
+        receive_amount = 0
+
+        if from_currency == "USD" and to_currency == "USDT":
+            receive_amount = amount * usd_usdt
+
+        elif from_currency == "USDT" and to_currency == "USD":
+            receive_amount = amount * usdt_usd
+
+        elif from_currency == "USD" and to_currency == "CUP":
+            receive_amount = amount * usd_sell
+
+        elif from_currency == "CUP" and to_currency == "USD":
+            receive_amount = amount / usd_buy
+
+        elif from_currency == "USDT" and to_currency == "CUP":
+            receive_amount = amount * usdt_sell
+
+        elif from_currency == "CUP" and to_currency == "USDT":
+            receive_amount = amount / usdt_buy
+
+        else:
+            flash("Conversión no permitida.", "error")
+            return redirect(url_for("convert_page"))
+
+        adjust_wallet(user["id"], from_currency, amount, "Conversión enviada", "debit", "convert_out")
+        adjust_wallet(user["id"], to_currency, receive_amount, "Conversión recibida", "credit", "convert_in")
+
+        log_action(user["id"], "convert", f"{amount} {from_currency} → {receive_amount} {to_currency}")
+
+        flash("Conversión realizada correctamente.", "success")
+
+        return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:620px;">
+
+        <div class="card panel">
+
+          <h2>Convertir monedas</h2>
+
+          <form method="post">
+
+            <div>
+              <label>De</label>
+              <select name="from_currency">
+                <option>USD</option>
+                <option>USDT</option>
+                <option>CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>A</label>
+              <select name="to_currency">
+                <option>USD</option>
+                <option>USDT</option>
+                <option>CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input name="amount" placeholder="0.00" required>
+            </div>
+
+            <button class="btn btn-primary">
+              Convertir ahora
+            </button>
+
+          </form>
+
+          <div class="promo-box">
+            <strong>Tasas actuales</strong>
+            <ul>
+              <li>USD compra: {{ usd_buy }} CUP</li>
+              <li>USD venta: {{ usd_sell }} CUP</li>
+              <li>USDT compra: {{ usdt_buy }} CUP</li>
+              <li>USDT venta: {{ usdt_sell }} CUP</li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Convertir",
+        user=user,
+        usd_buy=usd_buy,
+        usd_sell=usd_sell,
+        usdt_buy=usdt_buy,
+        usdt_sell=usdt_sell
+    )
+
