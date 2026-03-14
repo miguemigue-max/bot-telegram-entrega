@@ -2901,3 +2901,238 @@ def admin_dashboard():
 
     return render_page(content, title="Admin", user=user)
 
+@app.route("/admin/approve_deposit/<int:deposit_id>")
+@login_required
+def approve_deposit(deposit_id):
+
+    user = current_user()
+    if not user["is_admin"]:
+        return redirect(url_for("wallet_page"))
+
+    conn = get_db()
+
+    deposit = q(conn, "SELECT * FROM deposits WHERE id = ?", (deposit_id,)).fetchone()
+
+    if not deposit:
+        conn.close()
+        flash("Depósito no encontrado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if deposit["status"] != "Pendiente":
+        conn.close()
+        flash("Este depósito ya fue procesado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    q(conn, "UPDATE deposits SET status = 'Aprobado' WHERE id = ?", (deposit_id,))
+    conn.commit()
+    conn.close()
+
+    adjust_wallet(
+        deposit["user_id"],
+        deposit["currency"],
+        deposit["amount"],
+        "Depósito aprobado",
+        "credit",
+        "deposit"
+    )
+
+    # activar referido si corresponde
+    if deposit["currency"] == "USD":
+        activate_referral_if_needed(deposit["user_id"], deposit["amount"])
+
+    log_action(user["id"], "approve_deposit", f"deposit {deposit_id}")
+
+    flash("Depósito aprobado.", "success")
+
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/approve_withdraw/<int:withdraw_id>")
+@login_required
+def approve_withdraw(withdraw_id):
+
+    user = current_user()
+    if not user["is_admin"]:
+        return redirect(url_for("wallet_page"))
+
+    conn = get_db()
+
+    withdraw = q(conn, "SELECT * FROM withdrawals WHERE id = ?", (withdraw_id,)).fetchone()
+
+    if not withdraw:
+        conn.close()
+        flash("Retiro no encontrado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if withdraw["status"] != "Pendiente":
+        conn.close()
+        flash("Este retiro ya fue procesado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    q(conn, "UPDATE withdrawals SET status = 'Completado' WHERE id = ?", (withdraw_id,))
+    conn.commit()
+    conn.close()
+
+    log_action(user["id"], "approve_withdraw", f"withdraw {withdraw_id}")
+
+    flash("Retiro marcado como completado.", "success")
+
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/adjust_balance", methods=["POST"])
+@login_required
+def admin_adjust_balance():
+
+    user = current_user()
+
+    if not user["is_admin"]:
+        return redirect(url_for("wallet_page"))
+
+    user_id = int(request.form.get("user_id"))
+    currency = request.form.get("currency")
+    amount = parse_float(request.form.get("amount"), 0)
+
+    if amount == 0:
+        flash("Monto inválido.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    adjust_wallet(
+        user_id,
+        currency,
+        abs(amount),
+        "Ajuste admin",
+        "credit" if amount > 0 else "debit",
+        "admin_adjust"
+    )
+
+    log_action(user["id"], "admin_adjust_balance", f"user {user_id} {amount} {currency}")
+
+    flash("Saldo ajustado.", "success")
+
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/settings", methods=["GET", "POST"])
+@login_required
+def admin_settings():
+
+    user = current_user()
+
+    if not user["is_admin"]:
+        return redirect(url_for("wallet_page"))
+
+    settings = get_settings()
+
+    if request.method == "POST":
+
+        conn = get_db()
+
+        for key in [
+            "usd_buy_cup",
+            "usd_sell_cup",
+            "usdt_buy_cup",
+            "usdt_sell_cup",
+            "usd_to_usdt",
+            "usdt_to_usd",
+            "referral_reward_usdt",
+            "referral_required_deposit_usd",
+            "bonus_withdraw_min_usdt"
+        ]:
+
+            value = request.form.get(key)
+
+            q(conn,
+              "UPDATE settings SET value = ? WHERE key = ?",
+              (value, key)
+            )
+
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "settings_update", "Admin cambió tasas")
+
+        flash("Configuración actualizada.", "success")
+
+        return redirect(url_for("admin_settings"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:700px;">
+
+        <div class="card panel">
+
+          <h2>Configuración del sistema</h2>
+
+          <form method="post">
+
+            <h3>Tasas USD</h3>
+
+            <div>
+              <label>USD compra (CUP)</label>
+              <input name="usd_buy_cup" value="{{settings['usd_buy_cup']}}">
+            </div>
+
+            <div>
+              <label>USD venta (CUP)</label>
+              <input name="usd_sell_cup" value="{{settings['usd_sell_cup']}}">
+            </div>
+
+            <h3>Tasas USDT</h3>
+
+            <div>
+              <label>USDT compra (CUP)</label>
+              <input name="usdt_buy_cup" value="{{settings['usdt_buy_cup']}}">
+            </div>
+
+            <div>
+              <label>USDT venta (CUP)</label>
+              <input name="usdt_sell_cup" value="{{settings['usdt_sell_cup']}}">
+            </div>
+
+            <h3>Conversión USD ⇄ USDT</h3>
+
+            <div>
+              <label>USD → USDT</label>
+              <input name="usd_to_usdt" value="{{settings['usd_to_usdt']}}">
+            </div>
+
+            <div>
+              <label>USDT → USD</label>
+              <input name="usdt_to_usd" value="{{settings['usdt_to_usd']}}">
+            </div>
+
+            <h3>Referidos</h3>
+
+            <div>
+              <label>Recompensa USDT</label>
+              <input name="referral_reward_usdt" value="{{settings['referral_reward_usdt']}}">
+            </div>
+
+            <div>
+              <label>Depósito mínimo (USD)</label>
+              <input name="referral_required_deposit_usd" value="{{settings['referral_required_deposit_usd']}}">
+            </div>
+
+            <div>
+              <label>Mínimo retiro bonus (USDT)</label>
+              <input name="bonus_withdraw_min_usdt" value="{{settings['bonus_withdraw_min_usdt']}}">
+            </div>
+
+            <button class="btn btn-primary">
+              Guardar configuración
+            </button>
+
+          </form>
+
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Configuración",
+        user=user,
+        settings=settings
+    )
