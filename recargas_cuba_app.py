@@ -1738,18 +1738,33 @@ def home():
         return redirect(url_for("admin_dashboard"))
 
     content = """
-    <section class="hero" style="padding-top:34px;">
-      <div class="container">
-        <div class="panel" style="padding:26px;">
-          <div class="hero-badge">● Nuevo: cuenta digital para Cuba</div>
-          <h1 class="hero-title" style="margin-bottom:14px;">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
-          <p class="hero-subtitle" style="margin-bottom:22px;">
-            Guarda saldo en USD, USDT y CUP. Deposita, retira, convierte y transfiere dinero
-            desde una sola cuenta digital pensada para Cuba.
-          </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="{{ url_for('register_step', step=1) }}">Crear cuenta gratis →</a>
-            <a class="btn btn-secondary" href="{{ url_for('login') }}">Entrar →</a>
+    <section class="nu-landing">
+      <div class="nu-landing-hero">
+        <div class="container">
+          <div class="nu-top-cta">
+            <a href="{{ url_for('register_step', step=1) }}" class="nu-pill-btn">
+              Quiero ser XyPher
+            </a>
+          </div>
+
+          <div class="nu-hero-copy">
+            <h1>Únete a la nueva cuenta digital pensada para Cuba</h1>
+          </div>
+
+          <div class="nu-floating-card">
+            <h3>Abre tu cuenta XyPher</h3>
+            <p>
+              Guarda saldo en USD, USDT y CUP. Deposita, retira,
+              convierte y transfiere dinero en un solo lugar.
+            </p>
+
+            <a class="nu-main-button" href="{{ url_for('register_step', step=1) }}">
+              Continuar
+            </a>
+
+            <a class="nu-sub-link" href="{{ url_for('login') }}">
+              Ya tengo cuenta
+            </a>
           </div>
         </div>
       </div>
