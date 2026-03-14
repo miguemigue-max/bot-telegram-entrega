@@ -1518,6 +1518,109 @@ nubank-strip{
   }
 }
 
+.nu-landing{
+  min-height:100vh;
+  background:#ece4f4;
+}
+
+.nu-landing-hero{
+  min-height:100vh;
+  position:relative;
+  background:
+    linear-gradient(rgba(0,0,0,0.20), rgba(0,0,0,0.28)),
+    url("https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=1400&q=80");
+  background-size:cover;
+  background-position:center;
+  border-bottom-left-radius:32px;
+  border-bottom-right-radius:32px;
+  overflow:hidden;
+}
+
+.nu-top-cta{
+  display:flex;
+  justify-content:center;
+  padding-top:26px;
+}
+
+.nu-pill-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:56px;
+  padding:0 28px;
+  border-radius:999px;
+  background:#8A05BE;
+  color:white;
+  font-weight:900;
+  font-size:1.05rem;
+  text-decoration:none;
+  box-shadow:0 14px 28px rgba(138,5,190,0.22);
+}
+
+.nu-hero-copy{
+  padding:250px 0 24px;
+  max-width:760px;
+}
+
+.nu-hero-copy h1{
+  margin:0;
+  color:white;
+  font-size:clamp(2.6rem, 8vw, 4.8rem);
+  line-height:0.94;
+  letter-spacing:-0.05em;
+  font-weight:900;
+  max-width:10ch;
+}
+
+.nu-floating-card{
+  background:#ffffff;
+  border-radius:36px;
+  padding:30px;
+  max-width:760px;
+  margin:18px auto 0;
+  box-shadow:0 24px 60px rgba(0,0,0,0.18);
+  transform:translateY(32px);
+}
+
+.nu-floating-card h3{
+  margin:0 0 12px;
+  font-size:2rem;
+  line-height:1.08;
+  color:#111;
+  font-weight:900;
+}
+
+.nu-floating-card p{
+  margin:0 0 22px;
+  color:#666;
+  font-size:1.05rem;
+  line-height:1.7;
+}
+
+.nu-main-button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:68px;
+  border-radius:999px;
+  background:linear-gradient(135deg,#8A05BE,#B65CFF);
+  color:white;
+  font-size:1.15rem;
+  font-weight:900;
+  text-decoration:none;
+  box-shadow:0 16px 30px rgba(138,5,190,0.22);
+  margin-bottom:14px;
+}
+
+.nu-sub-link{
+  display:block;
+  text-align:center;
+  color:#8A05BE;
+  font-weight:800;
+  text-decoration:none;
+}
+
   </style>
 </head>
 <script>
