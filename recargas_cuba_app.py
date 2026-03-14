@@ -1619,25 +1619,37 @@ def home():
     if user and user["is_admin"]:
         return redirect(url_for("admin_dashboard"))
 
-    content = """
-    <section class="hero" style="padding-top:34px;">
+content = """
+<section class="landing-nu">
+  <div class="landing-hero-image">
+    <div class="landing-overlay">
       <div class="container">
-        <div class="panel" style="padding:26px;">
-          <div class="hero-badge">● Nuevo: cuenta digital para Cuba</div>
-          <h1 class="hero-title" style="margin-bottom:14px;">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
-          <p class="hero-subtitle" style="margin-bottom:22px;">
-            Guarda saldo en USD, USDT y CUP. Deposita, retira, convierte y transfiere dinero
-            desde una sola cuenta digital pensada para Cuba.
+        <div class="landing-copy">
+          <h1>Tu cuenta digital para Cuba</h1>
+          <p>
+            Guarda saldo en USD, USDT y CUP. Deposita, retira,
+            convierte y transfiere dinero desde una sola cuenta digital.
           </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="{{ url_for('register_step', step=1) }}">Crear cuenta gratis →</a>
-            <a class="btn btn-secondary" href="{{ url_for('login') }}">Entrar →</a>
-          </div>
+        </div>
+
+        <div class="landing-form-card">
+          <h3>Abre tu cuenta digital</h3>
+          <p>Empieza gratis y accede a tu billetera en minutos.</p>
+
+          <a class="landing-main-btn" href="{{ url_for('register_step', step=1) }}">
+            Crear cuenta gratis
+          </a>
+
+          <a class="landing-secondary-btn" href="{{ url_for('login') }}">
+            Entrar
+          </a>
         </div>
       </div>
-    </section>
-    """
-    return render_page(content, title="XyPher", user=None)
+    </div>
+  </div>
+</section>
+"""
+return render_page(content, title="XyPher", user=None)
 
 
 @app.route("/uploads/<path:filename>")
