@@ -930,24 +930,31 @@ BASE_HTML = """
   }
 }
 
-  .nubank-home{
+.nubank-home{
   background:#f4ecfb;
   min-height:100vh;
+  padding-bottom:40px;
 }
 
 .nubank-header{
-  background:linear-gradient(180deg,#8A05BE 0%, #a020f0 100%);
-  color:white;
-  padding:24px 0 34px;
-  border-bottom-left-radius:28px;
-  border-bottom-right-radius:28px;
+  background:linear-gradient(180deg,#8A05BE 0%, #9c27e6 100%);
+  color:#fff;
+  padding:22px 0 34px;
+  border-bottom-left-radius:30px;
+  border-bottom-right-radius:30px;
 }
 
-.nubank-topbar{
+.nubank-top{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  margin-bottom:18px;
+  gap:12px;
+}
+
+.nubank-user{
+  display:flex;
+  align-items:center;
+  gap:12px;
 }
 
 .nubank-avatar{
@@ -959,27 +966,25 @@ BASE_HTML = """
   align-items:center;
   justify-content:center;
   font-weight:900;
-  font-size:1rem;
 }
 
-.nubank-icons{
+.nubank-hello{
+  font-size:1.12rem;
+  font-weight:800;
+}
+
+.nubank-mini-icons{
   display:flex;
-  gap:16px;
+  gap:14px;
   font-size:1rem;
   opacity:.95;
 }
 
-.nubank-greeting{
-  font-size:1.15rem;
-  font-weight:800;
+.nubank-main{
+  margin-top:-12px;
 }
 
-.nubank-body{
-  margin-top:-10px;
-  padding-bottom:40px;
-}
-
-.nubank-card.main-account{
+.nubank-section-card{
   background:#ffffff;
   border-radius:24px;
   padding:22px;
@@ -987,42 +992,43 @@ BASE_HTML = """
   margin-bottom:16px;
 }
 
-.account-row{
+.nubank-row{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
 }
 
-.account-title{
+.nubank-section-title{
   font-size:1rem;
   color:#191919;
   font-weight:700;
   margin-bottom:8px;
 }
 
-.account-balance{
+.nubank-balance{
   font-size:2.2rem;
   font-weight:900;
   color:#191919;
   line-height:1;
 }
 
-.account-arrow{
+.nubank-arrow{
   font-size:1.8rem;
-  color:#777;
+  color:#767676;
   line-height:1;
 }
 
-.nubank-actions{
+.nubank-actions-row{
   display:grid;
   grid-template-columns:repeat(4,1fr);
   gap:12px;
   margin-top:22px;
 }
 
-.nubank-action{
+.nubank-action-btn{
   text-align:center;
+  color:#191919;
 }
 
 .nubank-action-icon{
@@ -1030,62 +1036,73 @@ BASE_HTML = """
   height:58px;
   margin:0 auto 10px;
   border-radius:50%;
-  background:#f1eef6;
+  background:#f2eef7;
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size:1.3rem;
-  color:#191919;
+  font-size:1.2rem;
   font-weight:900;
 }
 
-.nubank-action-label{
-  font-size:.95rem;
-  color:#191919;
+.nubank-action-text{
+  font-size:.92rem;
   font-weight:700;
 }
 
-.nubank-strip-card{
+.nubank-strip{
   background:#ffffff;
   border-radius:18px;
   padding:16px 18px;
   margin-bottom:14px;
   box-shadow:0 10px 24px rgba(138,5,190,0.08);
+  display:flex;
+  align-items:center;
+  gap:12px;
   color:#191919;
 }
 
-.nubank-wallet-list{
-  display:grid;
-  gap:14px;
-  margin-bottom:18px;
+.nubank-strip-icon{
+  width:28px;
+  height:28px;
+  border-radius:10px;
+  background:#f2eef7;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:.95rem;
 }
 
-.nubank-wallet-item{
+.nubank-strip-text{
+  font-weight:800;
+}
+
+.nubank-wallet-card{
   background:#ffffff;
   border-radius:22px;
   padding:22px;
   box-shadow:0 10px 24px rgba(138,5,190,0.08);
+  margin-bottom:14px;
 }
 
-.wallet-name{
+.nubank-wallet-title{
   color:#6f6f7b;
   font-size:1rem;
   margin-bottom:12px;
 }
 
-.wallet-value{
+.nubank-wallet-value{
   font-size:2rem;
   font-weight:900;
   color:#191919;
   line-height:1;
 }
 
-.nubank-transactions{
+.nubank-tx-list{
   display:grid;
   gap:12px;
 }
 
-.nubank-tx{
+.nubank-tx-item{
   background:#ffffff;
   border-radius:20px;
   padding:18px;
@@ -1108,15 +1125,15 @@ BASE_HTML = """
 }
 
 .nubank-tx-amount{
-  font-size:1.15rem;
+  font-size:1.1rem;
   font-weight:900;
 }
 
-.tx-plus{ color:#16a34a; }
-.tx-minus{ color:#d11a4a; }
+.tx-plus{color:#16a34a}
+.tx-minus{color:#d11a4a}
 
 @media (max-width:640px){
-  .nubank-actions{
+  .nubank-actions-row{
     grid-template-columns:repeat(4,1fr);
     gap:10px;
   }
@@ -1124,15 +1141,68 @@ BASE_HTML = """
   .nubank-action-icon{
     width:54px;
     height:54px;
-    font-size:1.2rem;
   }
 
-  .account-balance{
+  .nubank-balance{
     font-size:2rem;
   }
 }
+
+.toast-stack{
+  position:fixed;
+  top:16px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:9999;
+  display:grid;
+  gap:10px;
+  width:min(92vw, 460px);
+}
+
+.toast{
+  padding:14px 18px;
+  border-radius:18px;
+  font-weight:800;
+  box-shadow:0 18px 40px rgba(0,0,0,0.12);
+  animation:toastIn .25s ease;
+}
+
+.toast-success{
+  background:#eaf9ef;
+  color:#166534;
+  border:1px solid rgba(22,101,52,0.12);
+}
+
+.toast-error{
+  background:#fff1f3;
+  color:#be123c;
+  border:1px solid rgba(190,18,60,0.12);
+}
+
+.toast-info{
+  background:#f3e8ff;
+  color:#7e22ce;
+  border:1px solid rgba(126,34,206,0.12);
+}
+
+@keyframes toastIn{
+  from{opacity:0;transform:translateY(-10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
   </style>
 </head>
+<script>
+  setTimeout(function () {
+    const stack = document.getElementById("toastStack");
+    if (stack) {
+      stack.style.transition = "opacity .35s ease, transform .35s ease";
+      stack.style.opacity = "0";
+      stack.style.transform = "translateX(-50%) translateY(-10px)";
+      setTimeout(() => stack.remove(), 400);
+    }
+  }, 3000);
+</script>
 <body>
   <nav class="topbar">
     <div class="container topbar-inner">
@@ -1179,14 +1249,14 @@ BASE_HTML = """
 
   <div class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-wrap">
-          {% for category, message in messages %}
-            <div class="flash flash-{{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+  {% if messages %}
+    <div class="toast-stack" id="toastStack">
+      {% for category, message in messages %}
+        <div class="toast toast-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
   </div>
 
   {{ content|safe }}
