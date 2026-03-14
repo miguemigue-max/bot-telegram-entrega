@@ -2268,3 +2268,220 @@ def admin_resets():
 
     return render_page(content,title="Recuperaciones",user=current_user(),resets=resets)
 
+@app.route("/admin/settings", methods=["GET","POST"])
+@admin_required
+def admin_settings():
+
+    settings = get_settings()
+
+    if request.method == "POST":
+
+        usd_cup = request.form.get("usd_cup")
+        usdt_buy = request.form.get("usdt_buy_cup")
+        btc_usd = request.form.get("btc_usd")
+
+        card_label = request.form.get("card_label")
+        card_number = request.form.get("card_number")
+        card_holder = request.form.get("card_holder")
+
+        conn = get_db()
+
+        q(conn,"UPDATE settings SET value=? WHERE key='usd_cup'",(usd_cup,))
+        q(conn,"UPDATE settings SET value=? WHERE key='usdt_buy_cup'",(usdt_buy,))
+        q(conn,"UPDATE settings SET value=? WHERE key='btc_usd'",(btc_usd,))
+
+        q(conn,"UPDATE settings SET value=? WHERE key='payment_card_label'",(card_label,))
+        q(conn,"UPDATE settings SET value=? WHERE key='payment_card_number'",(card_number,))
+        q(conn,"UPDATE settings SET value=? WHERE key='payment_card_holder'",(card_holder,))
+
+        conn.commit()
+        conn.close()
+
+        flash("Configuración actualizada.","success")
+        return redirect(url_for("admin_settings"))
+
+    content = """
+
+<div class="page-wrap">
+<div class="container" style="max-width:800px;">
+
+<h2>Configuración financiera</h2>
+
+<form method="post" class="card panel">
+
+<h3>Tasas</h3>
+
+<label>USD → CUP</label>
+<input name="usd_cup" value="{{settings['usd_cup']}}">
+
+<label>USDT compra CUP</label>
+<input name="usdt_buy_cup" value="{{settings['usdt_buy_cup']}}">
+
+<label>BTC precio USD</label>
+<input name="btc_usd" value="{{settings['btc_usd']}}">
+
+<h3>Tarjeta de pago</h3>
+
+<label>Etiqueta</label>
+<input name="card_label" value="{{settings['payment_card_label']}}">
+
+<label>Número</label>
+<input name="card_number" value="{{settings['payment_card_number']}}">
+
+<label>Titular</label>
+<input name="card_holder" value="{{settings['payment_card_holder']}}">
+
+<button class="btn btn-primary">Guardar configuración</button>
+
+</form>
+
+</div>
+</div>
+
+"""
+
+    return render_page(
+        content,
+        title="Configuración",
+        user=current_user(),
+        settings=settings
+    )
+
+
+@app.route("/referrals")
+@login_required
+def referrals():
+
+    user = current_user()
+
+    conn = get_db()
+
+    referred = q(conn,
+        "SELECT * FROM users WHERE referred_by_user_id=?",
+        (user["id"],)
+    ).fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Mis referidos</h2>
+
+<p class="subtitle">
+Comparte tu código: <strong>{{user['referral_code']}}</strong>
+</p>
+
+{% if referred %}
+
+<table>
+
+<thead>
+<tr>
+<th>Nombre</th>
+<th>Email</th>
+<th>Fecha</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for r in referred %}
+
+<tr>
+
+<td>{{r['first_name']}} {{r['last_name']}}</td>
+<td>{{r['email']}}</td>
+<td>{{r['created_at']}}</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+{% else %}
+
+<div class="empty">
+Aún no tienes referidos.
+</div>
+
+{% endif %}
+
+</div>
+</div>
+
+"""
+
+    return render_page(
+        content,
+        title="Referidos",
+        user=user,
+        referred=referred
+    )
+
+
+@app.route("/admin/stats")
+@admin_required
+def admin_stats():
+
+    conn = get_db()
+
+    total_orders = q(conn,"SELECT COUNT(*) as c FROM orders").fetchone()["c"]
+    total_users = q(conn,"SELECT COUNT(*) as c FROM users").fetchone()["c"]
+    total_volume = q(conn,"SELECT SUM(total_cup) as s FROM orders").fetchone()["s"]
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Estadísticas</h2>
+
+<div class="stats">
+
+<div class="card stat">
+<div class="label">Pedidos totales</div>
+<div class="value">{{total_orders}}</div>
+</div>
+
+<div class="card stat">
+<div class="label">Usuarios</div>
+<div class="value">{{total_users}}</div>
+</div>
+
+<div class="card stat">
+<div class="label">Volumen CUP</div>
+<div class="value">{{total_volume}}</div>
+</div>
+
+</div>
+
+</div>
+</div>
+
+"""
+
+    return render_page(
+        content,
+        title="Estadísticas",
+        user=current_user(),
+        total_orders=total_orders,
+        total_users=total_users,
+        total_volume=total_volume
+    )
+
+
+if __name__ == "__main__":
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
