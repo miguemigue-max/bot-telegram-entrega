@@ -1400,6 +1400,124 @@ nubank-strip{
   }
 }
 
+.landing-nu{
+  min-height:100vh;
+  background:#efe7f7;
+}
+
+.landing-hero-image{
+  position:relative;
+  min-height:100vh;
+  background:
+    linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.30)),
+    url("https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=1200&q=80");
+  background-size:cover;
+  background-position:center;
+}
+
+.landing-overlay{
+  min-height:100vh;
+  padding:120px 0 40px;
+  display:flex;
+  align-items:flex-end;
+}
+
+.landing-copy{
+  color:white;
+  max-width:760px;
+  margin-bottom:26px;
+}
+
+.landing-copy h1{
+  margin:0 0 16px;
+  font-size:clamp(2.6rem, 8vw, 4.8rem);
+  line-height:0.95;
+  letter-spacing:-0.05em;
+  font-weight:900;
+}
+
+.landing-copy p{
+  margin:0;
+  font-size:1.2rem;
+  line-height:1.7;
+  color:rgba(255,255,255,0.94);
+  max-width:28ch;
+}
+
+.landing-form-card{
+  background:white;
+  border-radius:34px;
+  padding:28px;
+  box-shadow:0 24px 60px rgba(0,0,0,0.18);
+  max-width:760px;
+  margin-top:22px;
+}
+
+.landing-form-card h3{
+  margin:0 0 10px;
+  font-size:2rem;
+  line-height:1.1;
+  color:#111;
+  font-weight:900;
+}
+
+.landing-form-card p{
+  margin:0 0 22px;
+  color:#666;
+  font-size:1.05rem;
+  line-height:1.6;
+}
+
+.landing-main-btn,
+.landing-secondary-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:64px;
+  border-radius:999px;
+  font-size:1.15rem;
+  font-weight:900;
+  text-decoration:none;
+}
+
+.landing-main-btn{
+  background:linear-gradient(135deg,#8A05BE,#B65CFF);
+  color:white;
+  box-shadow:0 16px 30px rgba(138,5,190,0.20);
+  margin-bottom:14px;
+}
+
+.landing-secondary-btn{
+  background:#f7f4fb;
+  color:#1d1d1f;
+  border:1px solid rgba(138,5,190,0.10);
+}
+
+@media (max-width:640px){
+  .landing-overlay{
+    padding:110px 0 28px;
+  }
+
+  .landing-copy h1{
+    font-size:clamp(2.2rem, 10vw, 3.7rem);
+  }
+
+  .landing-copy p{
+    font-size:1.05rem;
+    max-width:none;
+  }
+
+  .landing-form-card{
+    border-radius:28px;
+    padding:24px;
+  }
+
+  .landing-form-card h3{
+    font-size:1.8rem;
+  }
+}
+
   </style>
 </head>
 <script>
