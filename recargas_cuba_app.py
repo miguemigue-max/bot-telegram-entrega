@@ -1454,10 +1454,12 @@ def register_step(step):
                 conn.close()
                 flash("Ese correo ya está registrado.", "error")
                 return redirect(url_for("register_step", step=3))
+
             if carnet_exists:
                 conn.close()
                 flash("Ese carnet ya está registrado.", "error")
                 return redirect(url_for("register_step", step=5))
+
             if tag_exists:
                 conn.close()
                 flash("Ese @tag ya está en uso.", "error")
@@ -1526,32 +1528,6 @@ def register_step(step):
 
     progress = int((step / 9) * 100)
 
-    if step == 6:
-        input_html = """
-        <select name="city" required>
-          <option value="">Selecciona tu ciudad</option>
-          {% for city in cities %}
-            <option value="{{ city }}" {% if data.get('city') == city %}selected{% endif %}>{{ city }}</option>
-          {% endfor %}
-        </select>
-        """
-    elif step == 4:
-        input_html = '<input type="password" name="password" placeholder="Tu contraseña" required>'
-    elif step == 8:
-        input_html = '<input type="text" name="referral_code" placeholder="Código opcional">'
-    elif step == 3:
-        input_html = '<input type="email" name="email" placeholder="tucorreo@email.com" value="{{ data.get(\'email\', \'\') }}" required>'
-    elif step == 7:
-        input_html = '<input type="text" name="profile_tag" placeholder="@miguel" value="{{ data.get(\'profile_tag\', \'\') }}" required>'
-    else:
-        field = field_map.get(step, "")
-        placeholder = {
-            1: "Tu nombre",
-            2: "Tus apellidos",
-            5: "Tu número de carnet",
-        }.get(step, "")
-        input_html = f'<input type="text" name="{field}" placeholder="{placeholder}" value="{{{{ data.get(\'{field}\', \'\') }}}}" required>'
-
     content = """
     <div class="onboarding-shell">
       <div class="step-card">
@@ -1564,7 +1540,29 @@ def register_step(step):
           <div class="step-helper">{{ helper }}</div>
 
           <form method="post">
-            {{ input_html|safe }}
+            {% if step == 6 %}
+              <select name="city" required>
+                <option value="">Selecciona tu ciudad</option>
+                {% for city in cities %}
+                  <option value="{{ city }}" {% if data.get('city') == city %}selected{% endif %}>{{ city }}</option>
+                {% endfor %}
+              </select>
+            {% elif step == 4 %}
+              <input type="password" name="password" placeholder="Tu contraseña" required>
+            {% elif step == 8 %}
+              <input type="text" name="referral_code" placeholder="Código opcional" value="{{ data.get('referral_code', '') }}">
+            {% elif step == 3 %}
+              <input type="email" name="email" placeholder="tucorreo@email.com" value="{{ data.get('email', '') }}" required>
+            {% elif step == 7 %}
+              <input type="text" name="profile_tag" placeholder="@miguel" value="{{ data.get('profile_tag', '') }}" required>
+            {% elif step == 1 %}
+              <input type="text" name="first_name" placeholder="Tu nombre" value="{{ data.get('first_name', '') }}" required>
+            {% elif step == 2 %}
+              <input type="text" name="last_name" placeholder="Tus apellidos" value="{{ data.get('last_name', '') }}" required>
+            {% elif step == 5 %}
+              <input type="text" name="carnet" placeholder="Tu número de carnet" value="{{ data.get('carnet', '') }}" required>
+            {% endif %}
+
             <div class="step-actions">
               {% if step > 1 %}
                 <a class="btn btn-secondary" href="{{ url_for('register_step', step=step-1) }}">Atrás</a>
@@ -1589,13 +1587,14 @@ def register_step(step):
           <form method="post">
             <div class="step-actions">
               <a class="btn btn-secondary" href="{{ url_for('register_step', step=8) }}">Atrás</a>
-              <button class="btn btn-primary" type="submit"><span class="loader"></span>Crear cuenta</button>
+              <button class="btn btn-primary" type="submit">Crear cuenta</button>
             </div>
           </form>
         {% endif %}
       </div>
     </div>
     """
+
     return render_page(
         content,
         title="Crear cuenta",
@@ -1605,7 +1604,6 @@ def register_step(step):
         question=question_map[step],
         helper=helper_map[step],
         progress=progress,
-        input_html=input_html,
         cities=CITIES_CUBA,
         data=data,
         masked_carnet=card_mask(data.get("carnet", "")),
