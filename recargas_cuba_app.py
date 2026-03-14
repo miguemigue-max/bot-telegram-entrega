@@ -1624,3 +1624,551 @@ def profile():
         profile_photo_url=profile_photo_url,
     )
 
+@app.route("/transfer", methods=["GET", "POST"])
+@login_required
+def transfer_money():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+
+    if request.method == "POST":
+        tag = clean_tag(request.form.get("tag", ""))
+        currency = request.form.get("currency", "").strip().upper()
+        amount = parse_float(request.form.get("amount", "0"), 0)
+
+        if not tag or currency not in {"USD", "USDT", "CUP"} or amount <= 0:
+            flash("Completa correctamente los datos de la transferencia.", "error")
+            return redirect(url_for("transfer_money"))
+
+        conn = get_db()
+        receiver = q(conn, "SELECT * FROM users WHERE profile_tag = ?", (tag,)).fetchone()
+
+        if not receiver:
+            conn.close()
+            flash("No encontramos ese @tag.", "error")
+            return redirect(url_for("transfer_money"))
+
+        if receiver["id"] == user["id"]:
+            conn.close()
+            flash("No puedes enviarte dinero a ti mismo.", "error")
+            return redirect(url_for("transfer_money"))
+
+        if not can_debit_wallet(user["id"], currency, amount):
+            conn.close()
+            flash("Saldo insuficiente.", "error")
+            return redirect(url_for("transfer_money"))
+
+        q(conn, """
+            INSERT INTO transfers (
+                sender_user_id, receiver_user_id, currency, amount, status, created_at
+            ) VALUES (?, ?, ?, ?, 'Completado', ?)
+        """, (
+            user["id"],
+            receiver["id"],
+            currency,
+            amount,
+            now_str()
+        ))
+        conn.commit()
+        conn.close()
+
+        adjust_wallet(user["id"], currency, amount, f"Transferencia enviada a {tag}", "debit", "transfer_out", tag)
+        adjust_wallet(receiver["id"], currency, amount, f"Transferencia recibida de {user['profile_tag']}", "credit", "transfer_in", user["profile_tag"])
+
+        log_action(user["id"], "transfer_sent", f"{amount} {currency} a {tag}")
+        flash("Transferencia realizada correctamente.", "success")
+        return redirect(url_for("home"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:620px;">
+        <div class="panel">
+          <h2 style="margin:0 0 8px;">Enviar dinero</h2>
+          <p class="subtitle" style="margin:0 0 18px;">
+            Envía saldo instantáneamente a otro usuario usando su @tag.
+          </p>
+
+          <form method="post">
+            <div>
+              <label>@tag destino</label>
+              <input type="text" name="tag" placeholder="@usuario" required>
+            </div>
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency" required>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+                <option value="CUP">CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input type="text" name="amount" placeholder="0.00" required>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Enviar ahora</button>
+          </form>
+
+          <div class="wallet-grid" style="margin-top:18px;grid-template-columns:repeat(3,minmax(0,1fr));">
+            <div class="wallet-box">
+              <div class="wallet-label">USD</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">USDT</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">CUP</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Enviar dinero", user=user, wallet=wallet)
+
+
+@app.route("/deposit", methods=["GET", "POST"])
+@login_required
+def deposit_page():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "POST":
+        method = request.form.get("method", "").strip()
+        currency = request.form.get("currency", "").strip().upper()
+        amount = parse_float(request.form.get("amount", "0"), 0)
+        detail = request.form.get("detail", "").strip()
+        proof = request.files.get("proof")
+        proof_path = ""
+
+        if method not in DEPOSIT_METHODS or currency not in {"USD", "USDT", "CUP"} or amount <= 0:
+            flash("Completa correctamente los datos del depósito.", "error")
+            return redirect(url_for("deposit_page"))
+
+        if proof and proof.filename:
+            safe_name = secure_filename(proof.filename)
+            ext = os.path.splitext(safe_name)[1].lower()
+            if ext not in [".jpg", ".jpeg", ".png", ".pdf", ".webp"]:
+                flash("El comprobante debe ser JPG, PNG, WEBP o PDF.", "error")
+                return redirect(url_for("deposit_page"))
+
+            final_name = f"deposit_{uuid.uuid4().hex}{ext}"
+            final_path = UPLOAD_DIR / final_name
+            proof.save(final_path)
+            proof_path = str(final_path)
+
+        conn = get_db()
+        q(conn, """
+            INSERT INTO deposits (
+                user_id, method, currency, amount, detail, proof_path, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'Pendiente', ?)
+        """, (
+            user["id"],
+            method,
+            currency,
+            amount,
+            detail,
+            proof_path,
+            now_str()
+        ))
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "deposit_created", f"{amount} {currency} por {method}")
+        flash("Depósito enviado para revisión.", "success")
+        return redirect(url_for("home"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:680px;">
+        <div class="panel">
+          <h2 style="margin:0 0 8px;">Depositar fondos</h2>
+          <p class="subtitle" style="margin:0 0 18px;">
+            Solicita un depósito a tu cuenta digital y sube el comprobante.
+          </p>
+
+          <form method="post" enctype="multipart/form-data">
+            <div>
+              <label>Método</label>
+              <select name="method" required>
+                {% for method in methods %}
+                  <option value="{{ method }}">{{ method }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency" required>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+                <option value="CUP">CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input type="text" name="amount" placeholder="0.00" required>
+            </div>
+
+            <div>
+              <label>Detalle</label>
+              <textarea name="detail" placeholder="Ej: transferencia enviada, wallet, referencia, etc."></textarea>
+            </div>
+
+            <div>
+              <label>Comprobante</label>
+              <input type="file" name="proof">
+            </div>
+
+            <button class="btn btn-primary" type="submit">Enviar depósito</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Depositar", user=user, methods=DEPOSIT_METHODS)
+
+
+@app.route("/withdraw", methods=["GET", "POST"])
+@login_required
+def withdraw_page():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+    settings = get_settings()
+
+    usd_sell = parse_float(settings.get("usd_sell_cup", "490"), 490)
+    usdt_sell = parse_float(settings.get("usdt_sell_cup", "575"), 575)
+    bonus_withdraw_min = parse_float(settings.get("bonus_withdraw_min_usdt", "1"), 1)
+
+    if request.method == "POST":
+        currency = request.form.get("currency", "").strip().upper()
+        method = request.form.get("method", "").strip()
+        amount = parse_float(request.form.get("amount", "0"), 0)
+        destination = request.form.get("destination", "").strip()
+        use_bonus = request.form.get("use_bonus", "") == "yes"
+
+        if method not in WITHDRAW_METHODS or currency not in {"USD", "USDT", "CUP"} or amount <= 0 or not destination:
+            flash("Completa correctamente los datos del retiro.", "error")
+            return redirect(url_for("withdraw_page"))
+
+        payout_amount = amount
+        payout_currency = currency
+
+        if method == "Tarjeta CUP":
+            payout_currency = "CUP"
+            if currency == "USD":
+                payout_amount = amount * usd_sell
+            elif currency == "USDT":
+                payout_amount = amount * usdt_sell
+            elif currency == "CUP":
+                payout_amount = amount
+
+        if method == "PIX Brasil":
+            payout_currency = currency
+
+        if use_bonus:
+            if currency != "USDT":
+                flash("El bonus solo puede retirarse en USDT.", "error")
+                return redirect(url_for("withdraw_page"))
+            if amount < bonus_withdraw_min:
+                flash(f"El mínimo para retirar bonus es {bonus_withdraw_min:.2f} USDT.", "error")
+                return redirect(url_for("withdraw_page"))
+            if not can_debit_wallet(user["id"], "BONUS_USDT", amount):
+                flash("Saldo de bonus insuficiente.", "error")
+                return redirect(url_for("withdraw_page"))
+            debit_currency = "BONUS_USDT"
+            debit_desc = "Solicitud de retiro desde bonus"
+        else:
+            if not can_debit_wallet(user["id"], currency, amount):
+                flash("Saldo insuficiente.", "error")
+                return redirect(url_for("withdraw_page"))
+            debit_currency = currency
+            debit_desc = "Solicitud de retiro"
+
+        conn = get_db()
+        q(conn, """
+            INSERT INTO withdrawals (
+                user_id, method, currency, amount, destination,
+                payout_amount, payout_currency, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?)
+        """, (
+            user["id"],
+            method,
+            currency,
+            amount,
+            destination,
+            payout_amount,
+            payout_currency,
+            now_str()
+        ))
+        conn.commit()
+        conn.close()
+
+        adjust_wallet(user["id"], debit_currency, amount, debit_desc, "debit", "withdraw_request", destination)
+        log_action(user["id"], "withdraw_created", f"{amount} {currency} por {method}")
+        flash("Solicitud de retiro enviada.", "success")
+        return redirect(url_for("home"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:700px;">
+        <div class="panel">
+          <h2 style="margin:0 0 8px;">Retirar fondos</h2>
+          <p class="subtitle" style="margin:0 0 18px;">
+            Retira por cripto, Paypal, tarjeta en CUP o PIX Brasil.
+          </p>
+
+          <form method="post">
+            <div>
+              <label>Moneda</label>
+              <select name="currency" required>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+                <option value="CUP">CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Método de retiro</label>
+              <select name="method" required>
+                {% for method in methods %}
+                  <option value="{{ method }}">{{ method }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input type="text" name="amount" placeholder="0.00" required>
+            </div>
+
+            <div>
+              <label>Destino</label>
+              <input type="text" name="destination" placeholder="Wallet / Email / Tarjeta / PIX" required>
+            </div>
+
+            <div>
+              <label style="display:flex;gap:10px;align-items:center;">
+                <input type="checkbox" name="use_bonus" value="yes" style="width:auto;">
+                Usar saldo de bonus USDT
+              </label>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Solicitar retiro</button>
+          </form>
+
+          <div class="wallet-grid" style="margin-top:18px;grid-template-columns:repeat(4,minmax(0,1fr));">
+            <div class="wallet-box">
+              <div class="wallet-label">USD</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">USDT</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">CUP</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">Bonus</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+            </div>
+          </div>
+
+          <div class="panel" style="padding:18px;margin-top:18px;">
+            <div class="subtitle">
+              USD retiro a tarjeta CUP: {{ "%.2f"|format(usd_sell) }} CUP<br>
+              USDT retiro a tarjeta CUP: {{ "%.2f"|format(usdt_sell) }} CUP<br>
+              Mínimo retiro de bonus: {{ "%.2f"|format(bonus_withdraw_min) }} USDT
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Retirar",
+        user=user,
+        wallet=wallet,
+        methods=WITHDRAW_METHODS,
+        usd_sell=usd_sell,
+        usdt_sell=usdt_sell,
+        bonus_withdraw_min=bonus_withdraw_min
+    )
+
+
+@app.route("/convert", methods=["GET", "POST"])
+@login_required
+def convert_page():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+    settings = get_settings()
+
+    usd_buy = parse_float(settings.get("usd_buy_cup", "510"), 510)
+    usd_sell = parse_float(settings.get("usd_sell_cup", "490"), 490)
+    usdt_buy = parse_float(settings.get("usdt_buy_cup", "585"), 585)
+    usdt_sell = parse_float(settings.get("usdt_sell_cup", "575"), 575)
+    usd_to_usdt = parse_float(settings.get("usd_to_usdt", "1.00"), 1.00)
+    usdt_to_usd = parse_float(settings.get("usdt_to_usd", "1.00"), 1.00)
+
+    if request.method == "POST":
+        from_currency = request.form.get("from_currency", "").strip().upper()
+        to_currency = request.form.get("to_currency", "").strip().upper()
+        amount = parse_float(request.form.get("amount", "0"), 0)
+
+        if amount <= 0 or from_currency == to_currency:
+            flash("Conversión inválida.", "error")
+            return redirect(url_for("convert_page"))
+
+        if from_currency not in {"USD", "USDT", "CUP"} or to_currency not in {"USD", "USDT", "CUP"}:
+            flash("Monedas no válidas.", "error")
+            return redirect(url_for("convert_page"))
+
+        if not can_debit_wallet(user["id"], from_currency, amount):
+            flash("Saldo insuficiente.", "error")
+            return redirect(url_for("convert_page"))
+
+        rate_used = 0.0
+        receive_amount = 0.0
+
+        if from_currency == "USD" and to_currency == "USDT":
+            rate_used = usd_to_usdt
+            receive_amount = amount * rate_used
+        elif from_currency == "USDT" and to_currency == "USD":
+            rate_used = usdt_to_usd
+            receive_amount = amount * rate_used
+        elif from_currency == "USD" and to_currency == "CUP":
+            rate_used = usd_sell
+            receive_amount = amount * rate_used
+        elif from_currency == "CUP" and to_currency == "USD":
+            rate_used = usd_buy
+            receive_amount = amount / rate_used
+        elif from_currency == "USDT" and to_currency == "CUP":
+            rate_used = usdt_sell
+            receive_amount = amount * rate_used
+        elif from_currency == "CUP" and to_currency == "USDT":
+            rate_used = usdt_buy
+            receive_amount = amount / rate_used
+        else:
+            flash("Esa conversión todavía no está disponible.", "error")
+            return redirect(url_for("convert_page"))
+
+        adjust_wallet(user["id"], from_currency, amount, f"Conversión a {to_currency}", "debit", "convert_out")
+        adjust_wallet(user["id"], to_currency, receive_amount, f"Conversión desde {from_currency}", "credit", "convert_in")
+
+        conn = get_db()
+        q(conn, """
+            INSERT INTO conversions (
+                user_id, from_currency, to_currency, from_amount, to_amount, rate_used, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user["id"],
+            from_currency,
+            to_currency,
+            amount,
+            receive_amount,
+            rate_used,
+            now_str()
+        ))
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "convert", f"{amount} {from_currency} -> {receive_amount} {to_currency}")
+        flash("Conversión realizada correctamente.", "success")
+        return redirect(url_for("home"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:680px;">
+        <div class="panel">
+          <h2 style="margin:0 0 8px;">Convertir monedas</h2>
+          <p class="subtitle" style="margin:0 0 18px;">
+            Convierte saldo dentro de la plataforma usando tus tasas configuradas.
+          </p>
+
+          <form method="post">
+            <div>
+              <label>De</label>
+              <select name="from_currency" required>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+                <option value="CUP">CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>A</label>
+              <select name="to_currency" required>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+                <option value="CUP">CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input type="text" name="amount" placeholder="0.00" required>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Convertir ahora</button>
+          </form>
+
+          <div class="panel" style="padding:18px;margin-top:18px;">
+            <div class="subtitle">
+              USD compra: {{ "%.2f"|format(usd_buy) }} CUP<br>
+              USD venta: {{ "%.2f"|format(usd_sell) }} CUP<br>
+              USDT compra: {{ "%.2f"|format(usdt_buy) }} CUP<br>
+              USDT venta: {{ "%.2f"|format(usdt_sell) }} CUP<br>
+              USD → USDT: {{ "%.2f"|format(usd_to_usdt) }}<br>
+              USDT → USD: {{ "%.2f"|format(usdt_to_usd) }}
+            </div>
+          </div>
+
+          <div class="wallet-grid" style="margin-top:18px;grid-template-columns:repeat(3,minmax(0,1fr));">
+            <div class="wallet-box">
+              <div class="wallet-label">USD</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">USDT</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+            </div>
+            <div class="wallet-box">
+              <div class="wallet-label">CUP</div>
+              <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Convertir",
+        user=user,
+        wallet=wallet,
+        usd_buy=usd_buy,
+        usd_sell=usd_sell,
+        usdt_buy=usdt_buy,
+        usdt_sell=usdt_sell,
+        usd_to_usdt=usd_to_usdt,
+        usdt_to_usd=usdt_to_usd
+    )
+
