@@ -1082,3 +1082,430 @@ def logout():
     session.clear()
     flash("Has cerrado sesión.", "info")
     return redirect(url_for("home"))
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        city = request.form.get("city", "").strip()
+        new_tag = request.form.get("profile_tag", "").strip()
+        photo = request.files.get("profile_photo")
+        photo_path = user["profile_photo"]
+
+        if new_tag and not new_tag.startswith("@"):
+            new_tag = "@" + new_tag
+
+        new_tag = new_tag.lower().strip()
+        new_tag = "@" + "".join(ch for ch in new_tag.replace("@", "") if ch.isalnum() or ch in "._")
+
+        if not first_name or not last_name or city not in CITIES_CUBA or not new_tag or new_tag == "@":
+            flash("Completa los datos del perfil correctamente.", "error")
+        else:
+            conn = get_db()
+            tag_exists = q(conn, "SELECT id FROM users WHERE profile_tag = ? AND id != ?", (new_tag, user["id"])).fetchone()
+
+            if tag_exists:
+                conn.close()
+                flash("Ese @tag ya está en uso.", "error")
+                return redirect(url_for("profile"))
+
+            if photo and photo.filename:
+                safe_name = secure_filename(photo.filename)
+                ext = os.path.splitext(safe_name)[1].lower()
+
+                if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+                    conn.close()
+                    flash("La foto debe ser JPG, PNG o WEBP.", "error")
+                    return redirect(url_for("profile"))
+
+                final_name = f"avatar_{uuid.uuid4().hex}{ext}"
+                final_path = UPLOAD_DIR / final_name
+                photo.save(final_path)
+                photo_path = str(final_path)
+
+            q(conn, """
+                UPDATE users
+                SET first_name = ?, last_name = ?, city = ?, profile_tag = ?, profile_photo = ?
+                WHERE id = ?
+            """, (first_name, last_name, city, new_tag, photo_path, user["id"]))
+            conn.commit()
+            conn.close()
+
+            log_action(user["id"], "profile_updated", "Perfil actualizado")
+            flash("Perfil actualizado correctamente.", "success")
+            return redirect(url_for("profile"))
+
+    wallet = get_wallet(user["id"])
+    profile_photo_url = url_for("uploaded_file", filename=os.path.basename(user["profile_photo"])) if user["profile_photo"] else None
+    settings = get_settings()
+    referral_reward = parse_float(settings.get("referral_reward_usdt", "0.50"), 0.50)
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:980px;">
+        <div class="profile-hero card">
+          <div class="avatar">
+            {% if profile_photo_url %}
+              <img src="{{ profile_photo_url }}" alt="Foto">
+            {% else %}
+              {{ user['first_name'][0] }}{{ user['last_name'][0] }}
+            {% endif %}
+          </div>
+
+          <div>
+            <h2 style="margin-bottom:6px;">{{ user['first_name'] }} {{ user['last_name'] }}</h2>
+            <div class="tag-pill">{{ user['profile_tag'] }}</div>
+            <p class="subtitle" style="font-size:1rem; margin-top:14px; margin-bottom:0;">
+              {{ user['email'] }} · {{ user['city'] }}
+            </p>
+            <p class="subtitle" style="font-size:0.95rem; margin-top:10px; margin-bottom:0;">
+              Tu código de referido: <strong>{{ user['referral_code'] }}</strong>
+            </p>
+          </div>
+
+          <a class="btn btn-secondary" href="{{ url_for('wallet_page') }}">Ver billetera</a>
+        </div>
+
+        <div class="grid-2">
+          <div class="card panel">
+            <h3>Editar perfil</h3>
+            <form method="post" enctype="multipart/form-data">
+              <div><label>Nombre</label><input type="text" name="first_name" value="{{ user['first_name'] }}" required></div>
+              <div><label>Apellidos</label><input type="text" name="last_name" value="{{ user['last_name'] }}" required></div>
+              <div><label>@tag</label><input type="text" name="profile_tag" value="{{ user['profile_tag'] }}" required></div>
+
+              <div>
+                <label>Ciudad</label>
+                <select name="city" required>
+                  {% for city in cities %}
+                    <option value="{{ city }}" {% if user['city'] == city %}selected{% endif %}>{{ city }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div><label>Subir foto</label><input type="file" name="profile_photo"></div>
+              <button class="btn btn-primary" type="submit">Guardar cambios</button>
+            </form>
+          </div>
+
+          <div class="card panel">
+            <h3>Resumen rápido</h3>
+            <div class="wallet-grid">
+              <div class="card wallet-card">
+                <div class="wallet-label">CUP</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['cup_balance']) }}</div>
+              </div>
+              <div class="card wallet-card">
+                <div class="wallet-label">USD</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['usd_balance']) }}</div>
+              </div>
+              <div class="card wallet-card">
+                <div class="wallet-label">USDT</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['usdt_balance']) }}</div>
+              </div>
+            </div>
+
+            <p class="subtitle" style="font-size:1rem; margin-top:18px; margin-bottom:0;">
+              Gana {{ '%.2f'|format(referral_reward) }} USDT por cada referido válido que se registre con tu código.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Mi perfil",
+        user=user,
+        cities=CITIES_CUBA,
+        wallet=wallet,
+        profile_photo_url=profile_photo_url,
+        referral_reward=referral_reward,
+    )
+
+
+@app.route("/wallet")
+@login_required
+def wallet_page():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+
+    conn = get_db()
+    txs = q(conn, """
+        SELECT * FROM wallet_transactions
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 30
+    """, (user["id"],)).fetchall()
+
+    transfers = q(conn, """
+        SELECT
+            t.*,
+            u1.profile_tag AS sender_tag,
+            u2.profile_tag AS receiver_tag
+        FROM transfers t
+        JOIN users u1 ON t.sender_user_id = u1.id
+        JOIN users u2 ON t.receiver_user_id = u2.id
+        WHERE t.sender_user_id = ? OR t.receiver_user_id = ?
+        ORDER BY t.id DESC
+        LIMIT 20
+    """, (user["id"], user["id"])).fetchall()
+    conn.close()
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="top-row">
+          <div>
+            <h2>Mi billetera</h2>
+            <p class="subtitle" style="font-size:1rem; margin-bottom:0;">
+              Gestiona tus balances y revisa tus movimientos.
+            </p>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a class="btn btn-secondary" href="{{ url_for('transfer_money') }}">Enviar dinero</a>
+            <a class="btn btn-primary" href="{{ url_for('new_order') }}">Comprar</a>
+          </div>
+        </div>
+
+        <div class="wallet-grid" style="margin-bottom:22px;">
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo CUP</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['cup_balance']) }}</div>
+          </div>
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo USD</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['usd_balance']) }}</div>
+          </div>
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo USDT</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['usdt_balance']) }}</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card panel">
+            <h3 style="margin-bottom:14px;">Movimientos</h3>
+            {% if txs %}
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Moneda</th>
+                  <th>Monto</th>
+                  <th>Dirección</th>
+                  <th>Tipo</th>
+                  <th>Descripción</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for tx in txs %}
+                <tr>
+                  <td data-label="ID">#{{ tx['id'] }}</td>
+                  <td data-label="Moneda">{{ tx['currency'] }}</td>
+                  <td data-label="Monto">{{ tx['amount'] }}</td>
+                  <td data-label="Dirección">{{ tx['direction'] }}</td>
+                  <td data-label="Tipo">{{ tx['tx_type'] }}</td>
+                  <td data-label="Descripción">{{ tx['description'] }}</td>
+                  <td data-label="Fecha">{{ tx['created_at'] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+              <div class="empty">No hay movimientos todavía.</div>
+            {% endif %}
+          </div>
+
+          <div class="card panel">
+            <h3 style="margin-bottom:14px;">Transferencias</h3>
+            {% if transfers %}
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Desde</th>
+                  <th>Hacia</th>
+                  <th>Moneda</th>
+                  <th>Monto</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for tx in transfers %}
+                <tr>
+                  <td data-label="ID">#{{ tx['id'] }}</td>
+                  <td data-label="Desde">{{ tx['sender_tag'] }}</td>
+                  <td data-label="Hacia">{{ tx['receiver_tag'] }}</td>
+                  <td data-label="Moneda">{{ tx['currency'] }}</td>
+                  <td data-label="Monto">{{ tx['amount'] }}</td>
+                  <td data-label="Fecha">{{ tx['created_at'] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+              <div class="empty">No hay transferencias todavía.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Mi billetera",
+        user=user,
+        wallet=wallet,
+        txs=txs,
+        transfers=transfers,
+    )
+
+
+@app.route("/transfer", methods=["GET", "POST"])
+@login_required
+def transfer_money():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+
+    if request.method == "POST":
+        receiver_tag = request.form.get("receiver_tag", "").strip().lower()
+        currency = request.form.get("currency", "").strip().upper()
+        amount = parse_float(request.form.get("amount", "0"), 0)
+        description = request.form.get("description", "").strip()
+
+        if receiver_tag and not receiver_tag.startswith("@"):
+            receiver_tag = "@" + receiver_tag
+
+        if currency not in {"CUP", "USD", "USDT"} or amount <= 0 or not receiver_tag:
+            flash("Completa correctamente los datos de la transferencia.", "error")
+        elif receiver_tag == user["profile_tag"]:
+            flash("No puedes enviarte dinero a ti mismo.", "error")
+        else:
+            conn = get_db()
+            receiver = q(conn, "SELECT id, profile_tag FROM users WHERE profile_tag = ?", (receiver_tag,)).fetchone()
+
+            if not receiver:
+                conn.close()
+                flash("No encontramos ese @tag.", "error")
+            else:
+                field = {"CUP": "cup_balance", "USD": "usd_balance", "USDT": "usdt_balance"}[currency]
+                sender_wallet = q(conn, "SELECT * FROM wallets WHERE user_id = ?", (user["id"],)).fetchone()
+
+                if float(sender_wallet[field]) < float(amount):
+                    conn.close()
+                    flash("Saldo insuficiente.", "error")
+                else:
+                    q(conn, f"UPDATE wallets SET {field} = {field} - ? WHERE user_id = ?", (amount, user["id"]))
+                    q(conn, f"UPDATE wallets SET {field} = {field} + ? WHERE user_id = ?", (amount, receiver["id"]))
+
+                    q(conn, """
+                        INSERT INTO wallet_transactions
+                        (user_id, currency, amount, direction, tx_type, description, reference, created_at)
+                        VALUES (?, ?, ?, 'debit', 'transfer_out', ?, ?, ?)
+                    """, (
+                        user["id"],
+                        currency,
+                        amount,
+                        description or f"Transferencia a {receiver_tag}",
+                        receiver_tag,
+                        now_str(),
+                    ))
+
+                    q(conn, """
+                        INSERT INTO wallet_transactions
+                        (user_id, currency, amount, direction, tx_type, description, reference, created_at)
+                        VALUES (?, ?, ?, 'credit', 'transfer_in', ?, ?, ?)
+                    """, (
+                        receiver["id"],
+                        currency,
+                        amount,
+                        description or f"Transferencia recibida de {user['profile_tag']}",
+                        user["profile_tag"],
+                        now_str(),
+                    ))
+
+                    q(conn, """
+                        INSERT INTO transfers
+                        (sender_user_id, receiver_user_id, currency, amount, status, created_at)
+                        VALUES (?, ?, ?, ?, 'Completado', ?)
+                    """, (
+                        user["id"],
+                        receiver["id"],
+                        currency,
+                        amount,
+                        now_str(),
+                    ))
+
+                    conn.commit()
+                    conn.close()
+
+                    log_action(user["id"], "transfer_sent", f"{amount} {currency} a {receiver_tag}")
+                    flash("Transferencia realizada correctamente.", "success")
+                    return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:760px;">
+        <div class="card form-card">
+          <div class="top-row" style="margin-bottom:10px;">
+            <div>
+              <h2>Enviar dinero</h2>
+              <p class="subtitle" style="font-size:1rem; margin-bottom:0;">
+                Envía CUP, USD o USDT a otro usuario usando su @tag.
+              </p>
+            </div>
+            <a class="btn btn-secondary" href="{{ url_for('wallet_page') }}">Volver a billetera</a>
+          </div>
+
+          <div class="wallet-grid" style="margin-bottom:20px;">
+            <div class="card wallet-card">
+              <div class="wallet-label">CUP</div>
+              <div class="wallet-amount">{{ '%.2f'|format(wallet['cup_balance']) }}</div>
+            </div>
+            <div class="card wallet-card">
+              <div class="wallet-label">USD</div>
+              <div class="wallet-amount">{{ '%.2f'|format(wallet['usd_balance']) }}</div>
+            </div>
+            <div class="card wallet-card">
+              <div class="wallet-label">USDT</div>
+              <div class="wallet-amount">{{ '%.2f'|format(wallet['usdt_balance']) }}</div>
+            </div>
+          </div>
+
+          <form method="post">
+            <div><label>@tag destino</label><input type="text" name="receiver_tag" placeholder="@usuario" required></div>
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency" required>
+                <option value="CUP">CUP</option>
+                <option value="USD">USD</option>
+                <option value="USDT">USDT</option>
+              </select>
+            </div>
+
+            <div><label>Monto</label><input type="text" name="amount" placeholder="Ej: 10" required></div>
+            <div><label>Descripción opcional</label><input type="text" name="description" placeholder="Ej: pago, ayuda, recarga"></div>
+
+            <button class="btn btn-primary" type="submit">Enviar dinero</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Enviar dinero", user=user, wallet=wallet)
+    
