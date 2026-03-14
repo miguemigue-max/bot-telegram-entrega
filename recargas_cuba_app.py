@@ -1123,3 +1123,504 @@ def uploaded_file(filename):
 def wallet_page():
     return redirect(url_for("home"))
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user():
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "").strip()
+
+        conn = get_db()
+        user = q(conn, "SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+        if not user:
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        elif user["is_locked"]:
+            conn.close()
+            flash("Tu cuenta está bloqueada. Solicita recuperación.", "error")
+        elif not check_password_hash(user["password"], password):
+            failed = int(user["failed_attempts"]) + 1
+            is_locked = 1 if failed >= 5 else 0
+            q(conn, "UPDATE users SET failed_attempts = ?, is_locked = ? WHERE id = ?", (failed, is_locked, user["id"]))
+            conn.commit()
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        else:
+            q(conn, "UPDATE users SET failed_attempts = 0, is_locked = 0, last_login_at = ? WHERE id = ?", (now_str(), user["id"]))
+            conn.commit()
+            conn.close()
+
+            session["user_id"] = user["id"]
+            log_action(user["id"], "user_login", "Inicio de sesión correcto")
+            flash("Sesión iniciada correctamente.", "success")
+
+            if user["is_admin"]:
+                return redirect(url_for("admin_dashboard"))
+            return redirect(url_for("home"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="auth-card panel">
+        <h2 style="margin:0 0 10px;">Entrar</h2>
+        <p class="subtitle" style="margin:0 0 18px;">
+          Accede a tu cuenta digital para gestionar saldo, depósitos, retiros y transferencias.
+        </p>
+
+        <form method="post">
+          <div>
+            <label>Correo electrónico</label>
+            <input type="email" name="email" placeholder="tucorreo@email.com" required>
+          </div>
+
+          <div>
+            <label>Contraseña</label>
+            <input type="password" name="password" placeholder="Tu contraseña" required>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Entrar</button>
+        </form>
+
+        <div class="subtitle" style="margin-top:16px;">
+          ¿No tienes cuenta? <a href="{{ url_for('register_step', step=1) }}" style="font-weight:800;color:#fff;">Crea una</a><br>
+          <a href="{{ url_for('forgot_password') }}" style="font-weight:800;color:#fff;">¿Olvidaste tu contraseña?</a>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Entrar", user=None)
+
+
+@app.route("/logout")
+def logout():
+    user = current_user()
+    if user:
+        log_action(user["id"], "user_logout", "Cierre de sesión")
+    session.clear()
+    flash("Has cerrado sesión.", "info")
+    return redirect(url_for("home"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+
+        if not email:
+            flash("Escribe tu correo.", "error")
+        else:
+            flash("Solicitud enviada. Un administrador revisará tu caso.", "success")
+            return redirect(url_for("login"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="auth-card panel">
+        <h2 style="margin:0 0 10px;">Recuperar contraseña</h2>
+        <p class="subtitle" style="margin:0 0 18px;">
+          Escribe tu correo para solicitar recuperación de acceso.
+        </p>
+
+        <form method="post">
+          <div>
+            <label>Correo electrónico</label>
+            <input type="email" name="email" placeholder="tucorreo@email.com" required>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Enviar solicitud</button>
+        </form>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Recuperar contraseña", user=None)
+
+
+@app.route("/register")
+def register_redirect():
+    return redirect(url_for("register_step", step=1))
+
+
+@app.route("/register/step/<int:step>", methods=["GET", "POST"])
+def register_step(step):
+    if current_user():
+        return redirect(url_for("home"))
+
+    if "register_data" not in session:
+        session["register_data"] = {}
+
+    data = session["register_data"]
+
+    field_map = {
+        1: "first_name",
+        2: "last_name",
+        3: "email",
+        4: "password",
+        5: "carnet",
+        6: "city",
+        7: "profile_tag",
+        8: "referral_code",
+    }
+
+    question_map = {
+        1: "¿Cuál es tu nombre?",
+        2: "¿Cuáles son tus apellidos?",
+        3: "¿Cuál es tu correo?",
+        4: "Crea tu contraseña",
+        5: "¿Cuál es tu número de carnet?",
+        6: "¿En qué ciudad vives?",
+        7: "Crea tu @tag",
+        8: "¿Tienes un código de referido?",
+        9: "Confirma tus datos",
+    }
+
+    helper_map = {
+        1: "Escribe tu nombre real, como aparece en tu documento.",
+        2: "Escribe tus apellidos completos.",
+        3: "Usaremos tu correo para acceso y seguridad.",
+        4: "Debe tener al menos 6 caracteres.",
+        5: "Este dato quedará bloqueado después del registro.",
+        6: "Selecciona tu ciudad en Cuba.",
+        7: "Tu @tag será único dentro de la plataforma.",
+        8: "Este paso es opcional. Si no tienes, puedes continuar.",
+        9: "Revisa todo antes de crear tu cuenta.",
+    }
+
+    if step < 1 or step > 9:
+        return redirect(url_for("register_step", step=1))
+
+    if request.method == "POST":
+        if step in field_map:
+            field = field_map[step]
+            value = request.form.get(field, "").strip()
+
+            if field == "profile_tag":
+                value = clean_tag(value)
+            elif field == "email":
+                value = value.lower()
+            elif field == "referral_code":
+                value = value.upper()
+
+            if step != 8 and not value:
+                flash("Completa este campo para continuar.", "error")
+                return redirect(url_for("register_step", step=step))
+
+            data[field] = value
+            session["register_data"] = data
+            return redirect(url_for("register_step", step=step + 1))
+
+        if step == 9:
+            first_name = data.get("first_name", "").strip()
+            last_name = data.get("last_name", "").strip()
+            email = data.get("email", "").strip().lower()
+            password = data.get("password", "").strip()
+            carnet = data.get("carnet", "").strip()
+            city = data.get("city", "").strip()
+            profile_tag = clean_tag(data.get("profile_tag", ""))
+            referral_code = data.get("referral_code", "").strip().upper()
+
+            if not all([first_name, last_name, email, password, carnet, city, profile_tag]):
+                flash("Faltan datos del registro.", "error")
+                return redirect(url_for("register_step", step=1))
+
+            if city not in CITIES_CUBA:
+                flash("Selecciona una ciudad válida.", "error")
+                return redirect(url_for("register_step", step=6))
+
+            if len(password) < 6:
+                flash("La contraseña debe tener al menos 6 caracteres.", "error")
+                return redirect(url_for("register_step", step=4))
+
+            conn = get_db()
+
+            email_exists = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+            carnet_exists = q(conn, "SELECT id FROM users WHERE carnet = ?", (carnet,)).fetchone()
+            tag_exists = q(conn, "SELECT id FROM users WHERE profile_tag = ?", (profile_tag,)).fetchone()
+
+            if email_exists:
+                conn.close()
+                flash("Ese correo ya está registrado.", "error")
+                return redirect(url_for("register_step", step=3))
+
+            if carnet_exists:
+                conn.close()
+                flash("Ese carnet ya está registrado.", "error")
+                return redirect(url_for("register_step", step=5))
+
+            if tag_exists:
+                conn.close()
+                flash("Ese @tag ya está en uso.", "error")
+                return redirect(url_for("register_step", step=7))
+
+            referred_by_user_id = None
+            if referral_code:
+                inviter = q(conn, "SELECT id FROM users WHERE referral_code = ?", (referral_code,)).fetchone()
+                if inviter:
+                    referred_by_user_id = inviter["id"]
+
+            my_ref_code = generate_referral_code()
+            while q(conn, "SELECT id FROM users WHERE referral_code = ?", (my_ref_code,)).fetchone():
+                my_ref_code = generate_referral_code()
+
+            q(conn, """
+                INSERT INTO users (
+                    first_name, last_name, carnet, email, password, city,
+                    profile_tag, profile_photo, referral_code, referred_by_user_id,
+                    is_admin, is_locked, failed_attempts, created_at, last_login_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, 0, 0, 0, ?, '')
+            """, (
+                first_name,
+                last_name,
+                carnet,
+                email,
+                generate_password_hash(password),
+                city,
+                profile_tag,
+                my_ref_code,
+                referred_by_user_id,
+                now_str(),
+            ))
+
+            user_id = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()["id"]
+
+            q(conn, """
+                INSERT INTO wallets (user_id, cup_balance, usd_balance, usdt_balance, bonus_usdt_balance, created_at)
+                VALUES (?, 0, 0, 0, 0, ?)
+            """, (user_id, now_str()))
+
+            if referred_by_user_id:
+                reward = parse_float(get_setting("referral_reward_usdt", "0.25"), 0.25)
+                required_deposit = parse_float(get_setting("referral_required_deposit_usd", "5"), 5)
+                q(conn, """
+                    INSERT INTO referrals (
+                        inviter_user_id, invited_user_id, reward_usdt, required_deposit_usd,
+                        status, activated_at, paid_at, created_at
+                    ) VALUES (?, ?, ?, ?, 'pendiente', '', '', ?)
+                """, (
+                    referred_by_user_id,
+                    user_id,
+                    reward,
+                    required_deposit,
+                    now_str(),
+                ))
+
+            conn.commit()
+            conn.close()
+
+            session.pop("register_data", None)
+            session["user_id"] = user_id
+            log_action(user_id, "user_registered", "Registro completado")
+            flash("Cuenta creada correctamente.", "success")
+            return redirect(url_for("home"))
+
+    progress = int((step / 9) * 100)
+
+    content = """
+    <div class="onboarding-shell">
+      <div class="step-card">
+        <div class="step-progress">
+          <div class="step-progress-fill" style="width: {{ progress }}%;"></div>
+        </div>
+
+        {% if step < 9 %}
+          <div class="step-question">{{ question }}</div>
+          <div class="step-helper">{{ helper }}</div>
+
+          <form method="post">
+            {% if step == 1 %}
+              <input type="text" name="first_name" placeholder="Tu nombre" value="{{ data.get('first_name', '') }}" required>
+            {% elif step == 2 %}
+              <input type="text" name="last_name" placeholder="Tus apellidos" value="{{ data.get('last_name', '') }}" required>
+            {% elif step == 3 %}
+              <input type="email" name="email" placeholder="tucorreo@email.com" value="{{ data.get('email', '') }}" required>
+            {% elif step == 4 %}
+              <input type="password" name="password" placeholder="Tu contraseña" required>
+            {% elif step == 5 %}
+              <input type="text" name="carnet" placeholder="Tu número de carnet" value="{{ data.get('carnet', '') }}" required>
+            {% elif step == 6 %}
+              <select name="city" required>
+                <option value="">Selecciona tu ciudad</option>
+                {% for city in cities %}
+                  <option value="{{ city }}" {% if data.get('city') == city %}selected{% endif %}>{{ city }}</option>
+                {% endfor %}
+              </select>
+            {% elif step == 7 %}
+              <input type="text" name="profile_tag" placeholder="@miguel" value="{{ data.get('profile_tag', '') }}" required>
+            {% elif step == 8 %}
+              <input type="text" name="referral_code" placeholder="Código opcional" value="{{ data.get('referral_code', '') }}">
+            {% endif %}
+
+            <div style="display:grid;gap:12px;">
+              {% if step > 1 %}
+                <a class="btn btn-secondary" href="{{ url_for('register_step', step=step-1) }}">Atrás</a>
+              {% endif %}
+              <button class="btn btn-primary" type="submit">Continuar</button>
+            </div>
+          </form>
+        {% else %}
+          <div class="step-question">{{ question }}</div>
+          <div class="step-helper">{{ helper }}</div>
+
+          <div class="panel" style="padding:20px;margin-bottom:16px;">
+            <div><strong>Nombre:</strong> {{ data.get('first_name') }}</div>
+            <div><strong>Apellidos:</strong> {{ data.get('last_name') }}</div>
+            <div><strong>Correo:</strong> {{ data.get('email') }}</div>
+            <div><strong>Carnet:</strong> {{ masked_carnet }}</div>
+            <div><strong>Ciudad:</strong> {{ data.get('city') }}</div>
+            <div><strong>@tag:</strong> {{ data.get('profile_tag') }}</div>
+            <div><strong>Referido:</strong> {{ data.get('referral_code') or 'Ninguno' }}</div>
+          </div>
+
+          <form method="post">
+            <div style="display:grid;gap:12px;">
+              <a class="btn btn-secondary" href="{{ url_for('register_step', step=8) }}">Atrás</a>
+              <button class="btn btn-primary" type="submit">Crear cuenta</button>
+            </div>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Crear cuenta",
+        user=None,
+        step=step,
+        question=question_map[step],
+        helper=helper_map[step],
+        progress=progress,
+        cities=CITIES_CUBA,
+        data=data,
+        masked_carnet=mask_carnet(data.get("carnet", "")),
+    )
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user = current_user()
+
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "POST":
+        photo = request.files.get("profile_photo")
+        city = request.form.get("city", "").strip()
+        photo_path = user["profile_photo"]
+
+        if city not in CITIES_CUBA:
+            flash("Selecciona una ciudad válida.", "error")
+            return redirect(url_for("profile"))
+
+        if photo and photo.filename:
+            safe_name = secure_filename(photo.filename)
+            ext = os.path.splitext(safe_name)[1].lower()
+
+            if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+                flash("La foto debe ser JPG, PNG o WEBP.", "error")
+                return redirect(url_for("profile"))
+
+            final_name = f"avatar_{uuid.uuid4().hex}{ext}"
+            final_path = UPLOAD_DIR / final_name
+            photo.save(final_path)
+            photo_path = str(final_path)
+
+        conn = get_db()
+        q(conn, "UPDATE users SET city = ?, profile_photo = ? WHERE id = ?", (city, photo_path, user["id"]))
+        conn.commit()
+        conn.close()
+
+        flash("Perfil actualizado correctamente.", "success")
+        return redirect(url_for("profile"))
+
+    wallet = get_wallet(user["id"])
+    profile_photo_url = url_for("uploaded_file", filename=os.path.basename(user["profile_photo"])) if user["profile_photo"] else None
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="grid-2">
+          <div class="panel">
+            <h2>Mi perfil</h2>
+            <div class="subtitle" style="margin-bottom:18px;">Datos protegidos de tu cuenta digital.</div>
+
+            <form method="post" enctype="multipart/form-data">
+              <div>
+                <label>Nombre</label>
+                <input value="{{ user['first_name'] }}" disabled>
+              </div>
+
+              <div>
+                <label>Apellidos</label>
+                <input value="{{ user['last_name'] }}" disabled>
+              </div>
+
+              <div>
+                <label>Carnet</label>
+                <input value="{{ masked_carnet }}" disabled>
+              </div>
+
+              <div>
+                <label>@tag</label>
+                <input value="{{ user['profile_tag'] }}" disabled>
+              </div>
+
+              <div>
+                <label>Ciudad</label>
+                <select name="city" required>
+                  {% for city in cities %}
+                    <option value="{{ city }}" {% if user['city'] == city %}selected{% endif %}>{{ city }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <label>Foto de perfil</label>
+                <input type="file" name="profile_photo">
+              </div>
+
+              <button class="btn btn-primary" type="submit">Guardar cambios</button>
+            </form>
+          </div>
+
+          <div class="panel">
+            <h2>Resumen rápido</h2>
+            <div class="wallet-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+              <div class="wallet-box">
+                <div class="wallet-label">USD</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">USDT</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">CUP</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">Bonus USDT</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+              </div>
+            </div>
+
+            <div class="subtitle" style="margin-top:16px;">
+              Correo: {{ user["email"] }}<br>
+              Código de referido: <strong>{{ user["referral_code"] }}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Mi perfil",
+        user=user,
+        wallet=wallet,
+        cities=CITIES_CUBA,
+        masked_carnet=mask_carnet(user["carnet"]),
+        profile_photo_url=profile_photo_url,
+    )
+
