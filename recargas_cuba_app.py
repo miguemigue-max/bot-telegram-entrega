@@ -528,10 +528,11 @@ BASE_HTML = """
       box-shadow:0 16px 30px rgba(124,92,255,0.24);
     }
     .btn-secondary{
-      color:white;
-      background:rgba(255,255,255,0.05);
-      border:1px solid rgba(255,255,255,0.08);
-    }
+  color:#2a2a2a;
+  background:#ffffff;
+  border:1px solid rgba(138,5,190,0.12);
+  box-shadow:0 10px 24px rgba(138,5,190,0.08);
+}
     .btn-danger{
       color:#ffd7df;
       background:rgba(255,92,122,0.10);
@@ -539,38 +540,51 @@ BASE_HTML = """
     }
 
     .icon-btn{
-      width:46px;height:46px;border-radius:16px;
-      display:inline-flex;align-items:center;justify-content:center;
-      color:white;
-      background:rgba(255,255,255,0.05);
-      border:1px solid rgba(255,255,255,0.08);
-      cursor:pointer;
-    }
+  width:50px;
+  height:50px;
+  border-radius:18px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:#8A05BE;
+  background:#ffffff;
+  border:1px solid rgba(138,5,190,0.12);
+  box-shadow:0 12px 28px rgba(138,5,190,0.10);
+  cursor:pointer;
+  font-size:1.25rem;
+  font-weight:900;
+}
 
     .menu-wrap{position:relative}
     .menu-dropdown{
-      position:absolute;right:0;top:calc(100% + 10px);
-      width:230px;
-      border-radius:20px;
-      background:rgba(17,24,44,0.98);
-      border:1px solid rgba(255,255,255,0.08);
-      box-shadow:var(--shadow);
-      padding:10px;
-      display:none;
-      z-index:60;
-    }
+  position:absolute;
+  right:0;
+  top:calc(100% + 10px);
+  width:240px;
+  border-radius:22px;
+  background:#ffffff;
+  border:1px solid rgba(138,5,190,0.10);
+  box-shadow:0 18px 45px rgba(138,5,190,0.16);
+  padding:10px;
+  display:none;
+  z-index:999;
+}
     .menu-wrap:hover .menu-dropdown,
     .menu-wrap:focus-within .menu-dropdown{
       display:block;
     }
 
     .menu-item{
-      display:block;
-      padding:12px 14px;
-      border-radius:14px;
-      font-weight:700;
-      color:var(--text);
-    }
+  display:block;
+  padding:13px 14px;
+  border-radius:14px;
+  font-weight:800;
+  color:#191919;
+}
+.menu-item:hover{
+  background:rgba(138,5,190,0.08);
+  color:#8A05BE;
+}
     .menu-item:hover{background:rgba(255,255,255,0.06)}
 
     .flash-wrap{display:grid;gap:10px;margin:18px 0}
@@ -716,15 +730,17 @@ BASE_HTML = """
     }
 
     .quick-card{
-      flex:1;
-      min-width:120px;
-      padding:18px;
-      border-radius:22px;
-      background:rgba(255,255,255,0.04);
-      border:1px solid rgba(255,255,255,0.07);
-      text-align:center;
-      font-weight:800;
-    }
+  flex:1;
+  min-width:120px;
+  padding:18px;
+  border-radius:22px;
+  background:#ffffff;
+  border:1px solid rgba(138,5,190,0.10);
+  box-shadow:0 12px 24px rgba(138,5,190,0.08);
+  text-align:center;
+  font-weight:900;
+  color:#1d1d1f;
+}
 
     .wallet-grid{
       display:grid;
@@ -734,8 +750,11 @@ BASE_HTML = """
     }
 
     .wallet-box{
-      padding:22px;
-    }
+  padding:24px;
+  background:#ffffff;
+  border:1px solid rgba(138,5,190,0.08);
+  box-shadow:0 14px 28px rgba(138,5,190,0.08);
+}
 
     .wallet-label{
       color:var(--muted);
@@ -890,12 +909,26 @@ BASE_HTML = """
     }
 
     @media (max-width:640px){
-      .hero-actions .btn,
-      .quick-actions .quick-card{width:100%}
-      .wallet-top{flex-direction:column;align-items:flex-start}
-      .hero-figure-title{top:110px}
-      .hero-desc{bottom:30px}
-    }
+  .hero-actions .btn,
+  .quick-actions .quick-card{width:100%}
+
+  .wallet-top{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .hero-figure{
+    display:none;
+  }
+
+  .hero-grid{
+    grid-template-columns:1fr;
+  }
+
+  .hero{
+    padding:28px 0 20px;
+  }
+}
   </style>
 </head>
 <body>
@@ -904,7 +937,7 @@ BASE_HTML = """
       <div class="brand">
         <a href="{{ url_for('home') }}" style="display:flex;align-items:center;gap:12px;">
           <span class="brand-mark">◉</span>
-          <span>Banco Cuba</span>
+          <span>XyPher</span>
         </a>
       </div>
 
