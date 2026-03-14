@@ -2258,3 +2258,256 @@ def referrals_page():
         bonus_withdraw_min=bonus_withdraw_min,
     )
 
+@app.route("/transfer", methods=["GET", "POST"])
+@login_required
+def transfer_money():
+
+    user = current_user()
+    wallet = get_wallet(user["id"])
+
+    if request.method == "POST":
+
+        tag = clean_tag(request.form.get("tag"))
+        currency = request.form.get("currency")
+        amount = parse_float(request.form.get("amount"), 0)
+
+        if not tag or amount <= 0:
+            flash("Datos inválidos.", "error")
+            return redirect(url_for("transfer_money"))
+
+        conn = get_db()
+
+        receiver = q(conn, "SELECT * FROM users WHERE profile_tag = ?", (tag,)).fetchone()
+
+        if not receiver:
+            conn.close()
+            flash("Usuario no encontrado.", "error")
+            return redirect(url_for("transfer_money"))
+
+        if receiver["id"] == user["id"]:
+            conn.close()
+            flash("No puedes enviarte dinero a ti mismo.", "error")
+            return redirect(url_for("transfer_money"))
+
+        if not can_debit_wallet(user["id"], currency, amount):
+            conn.close()
+            flash("Saldo insuficiente.", "error")
+            return redirect(url_for("transfer_money"))
+
+        adjust_wallet(user["id"], currency, amount, "Transferencia enviada", "debit", "transfer_out")
+        adjust_wallet(receiver["id"], currency, amount, "Transferencia recibida", "credit", "transfer_in")
+
+        q(conn, """
+            INSERT INTO transfers (
+                sender_user_id,
+                receiver_user_id,
+                currency,
+                amount,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, 'Completado', ?)
+        """, (
+            user["id"],
+            receiver["id"],
+            currency,
+            amount,
+            now_str()
+        ))
+
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "transfer_sent", f"{amount} {currency} -> {tag}")
+        flash("Transferencia realizada.", "success")
+
+        return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:600px;">
+
+        <div class="card panel">
+          <h2>Enviar dinero</h2>
+
+          <form method="post">
+
+            <div>
+              <label>@tag del usuario</label>
+              <input name="tag" placeholder="@usuario" required>
+            </div>
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency">
+                <option>USD</option>
+                <option>USDT</option>
+                <option>CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input name="amount" placeholder="0.00" required>
+            </div>
+
+            <button class="btn btn-primary">Enviar</button>
+
+          </form>
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(content, title="Enviar dinero", user=user)
+
+
+@app.route("/deposit", methods=["GET", "POST"])
+@login_required
+def deposit_page():
+
+    user = current_user()
+
+    if request.method == "POST":
+
+        method = request.form.get("method")
+        currency = request.form.get("currency")
+        amount = parse_float(request.form.get("amount"), 0)
+        detail = request.form.get("detail", "")
+
+        proof = request.files.get("proof")
+        proof_path = ""
+
+        if proof and proof.filename:
+            filename = secure_filename(proof.filename)
+            ext = os.path.splitext(filename)[1]
+            new_name = f"deposit_{uuid.uuid4().hex}{ext}"
+            save_path = UPLOAD_DIR / new_name
+            proof.save(save_path)
+            proof_path = str(save_path)
+
+        conn = get_db()
+
+        q(conn, """
+            INSERT INTO deposits (
+                user_id,
+                method,
+                currency,
+                amount,
+                detail,
+                proof_path,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'Pendiente', ?)
+        """, (
+            user["id"],
+            method,
+            currency,
+            amount,
+            detail,
+            proof_path,
+            now_str()
+        ))
+
+        conn.commit()
+        conn.close()
+
+        flash("Depósito enviado para revisión.", "success")
+        return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:600px;">
+
+        <div class="card panel">
+          <h2>Depositar fondos</h2>
+
+          <form method="post" enctype="multipart/form-data">
+
+            <div>
+              <label>Método</label>
+              <select name="method">
+                <option>Cripto</option>
+                <option>Paypal</option>
+                <option>Tarjeta CUP</option>
+                <option>PIX Brasil</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency">
+                <option>USD</option>
+                <option>USDT</option>
+                <option>CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input name="amount" required>
+            </div>
+
+            <div>
+              <label>Detalle</label>
+              <textarea name="detail" placeholder="Ej: transferencia enviada"></textarea>
+            </div>
+
+            <div>
+              <label>Comprobante</label>
+              <input type="file" name="proof">
+            </div>
+
+            <button class="btn btn-primary">Enviar depósito</button>
+
+          </form>
+
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(content, title="Depositar", user=user)
+
+
+def activate_referral_if_needed(user_id, deposit_amount_usd):
+
+    settings = get_settings()
+
+    required_deposit = parse_float(settings.get("referral_required_deposit_usd", "5"), 5)
+    reward = parse_float(settings.get("referral_reward_usdt", "0.25"), 0.25)
+
+    if deposit_amount_usd < required_deposit:
+        return
+
+    conn = get_db()
+
+    referral = q(conn, """
+        SELECT * FROM referrals
+        WHERE invited_user_id = ?
+        AND status = 'pendiente'
+    """, (user_id,)).fetchone()
+
+    if not referral:
+        conn.close()
+        return
+
+    inviter_id = referral["inviter_user_id"]
+
+    adjust_wallet(inviter_id, "BONUS_USDT", reward, "Bonus referido", "credit", "referral_bonus")
+
+    q(conn, """
+        UPDATE referrals
+        SET status = 'activado',
+            activated_at = ?
+        WHERE id = ?
+    """, (now_str(), referral["id"]))
+
+    conn.commit()
+    conn.close()
+
+    log_action(inviter_id, "referral_bonus", f"Bonus {reward} USDT activado")
+
