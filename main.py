@@ -738,3 +738,347 @@ BASE_HTML = """
 def render_page(content, title="Recargas a Cuba", user=None, hide_container=False, **context):
     rendered = render_template_string(content, user=user, **context)
     return render_template_string(BASE_HTML, content=rendered, title=title, user=user, hide_container=hide_container)
+
+@app.route("/")
+def home():
+    user = current_user()
+    promo = get_active_promo()
+
+    content = """
+    <header class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="badge">Productos que ofrecemos</div>
+          <h1>Recargas y activos digitales en un solo lugar.</h1>
+          <p class="subtitle">
+            Ofrecemos recargas, cripto y tarjetas de regalo. También puedes usar tu saldo interno,
+            enviar dinero entre usuarios y gestionar tu cuenta con tu propio @tag.
+          </p>
+          <div class="hero-actions">
+            {% if user %}
+              {% if user['is_admin'] %}
+                <a class="btn btn-primary" href="{{ url_for('admin_dashboard') }}">Ir al dashboard admin</a>
+              {% else %}
+                <a class="btn btn-primary" href="{{ url_for('new_order') }}">Hacer pedido</a>
+                <a class="btn btn-secondary" href="{{ url_for('wallet_page') }}">Mi billetera</a>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="card price-card">
+          <div class="price-kicker">{{ promo['title'] if promo else 'Promoción activa' }}</div>
+          <div class="price">{{ promo['price_text'] if promo else '14 500 CUP' }}</div>
+          <div class="subtitle" style="margin:0; font-size:1rem;">
+            {{ promo['description'] if promo else 'Recarga promocional disponible.' }}
+          </div>
+
+          <div class="promo-box">
+            <strong>Bonificación actual</strong>
+            <ul>
+              <li>{{ promo['bonus_1'] if promo else '25GB de navegación válidos para todas las redes.' }}</li>
+              <li>{{ promo['bonus_2'] if promo else 'Datos ilimitados desde las 12:00 a.m. hasta las 7:00 a.m.' }}</li>
+              <li>{{ promo['bonus_3'] if promo else 'Aplica a recargas entre 600 CUP y 1250 CUP.' }}</li>
+            </ul>
+          </div>
+
+          <a class="btn btn-buy" href="{{ url_for('new_order', service='Recargas') }}">Comprar</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="container">
+        <div class="services-title">
+          <h2>Productos que ofrecemos</h2>
+          <p>Desliza para ver las opciones disponibles.</p>
+        </div>
+
+        <div class="services-scroll">
+          <a class="service-item" href="{{ url_for('new_order', service='Recargas') if user else url_for('login') }}">
+            <div class="icon">📱</div>
+            <span>Recargas</span>
+          </a>
+          <a class="service-item" href="{{ url_for('new_order', service='Cripto') if user else url_for('login') }}">
+            <div class="icon">💵</div>
+            <span>Cripto</span>
+          </a>
+          <a class="service-item" href="{{ url_for('new_order', service='Gift Cards') if user else url_for('login') }}">
+            <div class="icon">🎁</div>
+            <span>Gift Cards</span>
+          </a>
+          <a class="service-item" href="{{ url_for('wallet_page') if user else url_for('login') }}">
+            <div class="icon">👛</div>
+            <span>Billetera</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">Plataforma de servicios · {{ year }}</div>
+    </footer>
+    """
+    return render_page(
+        content,
+        title="Recargas a Cuba",
+        user=user,
+        promo=promo,
+        year=datetime.now().year,
+    )
+
+
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_file(UPLOAD_DIR / filename)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user():
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "").strip()
+        city = request.form.get("city", "").strip()
+        desired_tag = request.form.get("profile_tag", "").strip()
+        referral_code = request.form.get("referral_code", "").strip().upper()
+
+        if desired_tag and not desired_tag.startswith("@"):
+            desired_tag = "@" + desired_tag
+
+        if not first_name or not last_name or not email or not password or not city or not desired_tag:
+            flash("Completa todos los campos.", "error")
+        elif city not in CITIES_CUBA:
+            flash("Selecciona una ciudad válida.", "error")
+        elif len(password) < 6:
+            flash("La contraseña debe tener al menos 6 caracteres.", "error")
+        else:
+            clean = desired_tag.lower().strip()
+            clean = "@" + "".join(ch for ch in clean.replace("@", "") if ch.isalnum() or ch in "._")
+
+            if clean == "@":
+                flash("El @tag no es válido.", "error")
+            else:
+                conn = get_db()
+
+                email_exists = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+                tag_exists = q(conn, "SELECT id FROM users WHERE profile_tag = ?", (clean,)).fetchone()
+
+                if email_exists:
+                    conn.close()
+                    flash("Ese correo ya está registrado.", "error")
+                elif tag_exists:
+                    conn.close()
+                    flash("Ese @tag ya está en uso.", "error")
+                else:
+                    referred_by_user_id = None
+                    if referral_code:
+                        inviter = q(conn, "SELECT id FROM users WHERE referral_code = ?", (referral_code,)).fetchone()
+                        if inviter:
+                            referred_by_user_id = inviter["id"]
+
+                    user_ref_code = "REF" + secrets.token_hex(4).upper()
+                    while q(conn, "SELECT id FROM users WHERE referral_code = ?", (user_ref_code,)).fetchone():
+                        user_ref_code = "REF" + secrets.token_hex(4).upper()
+
+                    q(conn, """
+                        INSERT INTO users (
+                            first_name, last_name, email, password, city, profile_tag, profile_photo,
+                            referral_code, referred_by_user_id, is_admin, is_locked, failed_attempts,
+                            last_login_at, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0, 0, 0, '', ?)
+                    """, (
+                        first_name,
+                        last_name,
+                        email,
+                        generate_password_hash(password),
+                        city,
+                        clean,
+                        user_ref_code,
+                        referred_by_user_id,
+                        now_str(),
+                    ))
+
+                    new_user = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+                    user_id = new_user["id"]
+
+                    q(conn, """
+                        INSERT INTO wallets (user_id, cup_balance, usd_balance, usdt_balance, created_at)
+                        VALUES (?, 0, 0, 0, ?)
+                    """, (user_id, now_str()))
+
+                    if referred_by_user_id:
+                        settings = get_settings()
+                        reward = parse_float(settings.get("referral_reward_usdt", "0.50"), 0.50)
+                        q(conn, "UPDATE wallets SET usdt_balance = usdt_balance + ? WHERE user_id = ?", (reward, referred_by_user_id))
+                        q(conn, """
+                            INSERT INTO wallet_transactions
+                            (user_id, currency, amount, direction, tx_type, description, reference, created_at)
+                            VALUES (?, 'USDT', ?, 'credit', 'referral_reward', ?, ?, ?)
+                        """, (
+                            referred_by_user_id,
+                            reward,
+                            f"Bono por referido: {email}",
+                            clean,
+                            now_str(),
+                        ))
+
+                    conn.commit()
+                    conn.close()
+
+                    session["user_id"] = user_id
+                    log_action(user_id, "user_registered", "Registro de nuevo usuario")
+                    flash("Cuenta creada correctamente.", "success")
+                    return redirect(url_for("home"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="card auth-card">
+        <h2>Crear cuenta</h2>
+        <p class="subtitle" style="font-size:1rem; margin-bottom:16px;">
+          Regístrate para hacer pedidos, usar tu billetera, transferir saldo y ganar referidos.
+        </p>
+
+        <form method="post">
+          <div><label>Nombre</label><input type="text" name="first_name" required></div>
+          <div><label>Apellidos</label><input type="text" name="last_name" required></div>
+          <div><label>Correo electrónico</label><input type="email" name="email" required></div>
+          <div><label>Tu @tag único</label><input type="text" name="profile_tag" placeholder="@miguel" required></div>
+
+          <div>
+            <label>Ciudad</label>
+            <select name="city" required>
+              <option value="">Selecciona tu ciudad</option>
+              {% for city in cities %}
+                <option value="{{ city }}">{{ city }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div><label>Contraseña</label><input type="password" name="password" required></div>
+          <div><label>Código de referido (opcional)</label><input type="text" name="referral_code" placeholder="REFXXXXXXX"></div>
+
+          <button class="btn btn-primary" type="submit">Crear cuenta</button>
+        </form>
+
+        <p class="subtitle" style="font-size:1rem; margin:16px 0 0;">
+          ¿Ya tienes cuenta? <a href="{{ url_for('login') }}"><strong>Inicia sesión</strong></a>
+        </p>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Crear cuenta", user=None, hide_container=True, cities=CITIES_CUBA)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user():
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "").strip()
+
+        conn = get_db()
+        user = q(conn, "SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+        if not user:
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        elif user["is_locked"]:
+            conn.close()
+            flash("Tu cuenta está bloqueada. Solicita recuperación o contacta al administrador.", "error")
+        elif not check_password_hash(user["password"], password):
+            failed = int(user["failed_attempts"]) + 1
+            is_locked = 1 if failed >= 5 else 0
+            q(conn, "UPDATE users SET failed_attempts = ?, is_locked = ? WHERE id = ?", (failed, is_locked, user["id"]))
+            conn.commit()
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        else:
+            q(conn, "UPDATE users SET failed_attempts = 0, is_locked = 0, last_login_at = ? WHERE id = ?", (now_str(), user["id"]))
+            conn.commit()
+            conn.close()
+
+            session["user_id"] = user["id"]
+            log_action(user["id"], "user_login", "Inicio de sesión correcto")
+            flash("Sesión iniciada correctamente.", "success")
+
+            if user["is_admin"]:
+                return redirect(url_for("admin_dashboard"))
+            return redirect(url_for("home"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="card auth-card">
+        <h2>Iniciar sesión</h2>
+        <p class="subtitle" style="font-size:1rem; margin-bottom:16px;">
+          Entra a tu cuenta para revisar pedidos, billetera y perfil.
+        </p>
+
+        <form method="post">
+          <div><label>Correo electrónico</label><input type="email" name="email" required></div>
+          <div><label>Contraseña</label><input type="password" name="password" required></div>
+          <button class="btn btn-primary" type="submit"><span class="loader"></span>Entrar</button>
+        </form>
+
+        <p class="subtitle" style="font-size:1rem; margin:16px 0 0;">
+          ¿No tienes cuenta? <a href="{{ url_for('register') }}"><strong>Créala aquí</strong></a><br>
+          <a href="{{ url_for('forgot_password') }}"><strong>¿Olvidaste tu contraseña?</strong></a>
+        </p>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Iniciar sesión", user=None, hide_container=True)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        note = request.form.get("note", "").strip()
+
+        if not email:
+            flash("Escribe tu correo.", "error")
+        else:
+            conn = get_db()
+            q(conn, """
+                INSERT INTO password_resets (email, note, status, created_at)
+                VALUES (?, ?, 'Pendiente', ?)
+            """, (email, note, now_str()))
+            conn.commit()
+            conn.close()
+            flash("Solicitud enviada. Revisaremos tu caso.", "success")
+            return redirect(url_for("login"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="card auth-card">
+        <h2>Recuperar contraseña</h2>
+        <p class="subtitle" style="font-size:1rem; margin-bottom:16px;">
+          Escribe tu correo y una nota opcional para que podamos ayudarte.
+        </p>
+
+        <form method="post">
+          <div><label>Correo electrónico</label><input type="email" name="email" required></div>
+          <div><label>Nota opcional</label><textarea name="note" placeholder="Ej: olvidé mi contraseña"></textarea></div>
+          <button class="btn btn-primary" type="submit">Enviar solicitud</button>
+        </form>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Recuperar contraseña", user=None, hide_container=True)
+
+
+@app.route("/logout")
+def logout():
+    user = current_user()
+    if user:
+        log_action(user["id"], "user_logout", "Cierre de sesión")
+    session.clear()
+    flash("Has cerrado sesión.", "info")
+    return redirect(url_for("home"))
