@@ -1518,7 +1518,8 @@ nubank-strip{
   }
 }
 
-.nu-landing{
+  </style>
+  .nu-landing{
   min-height:100vh;
   background:#ece4f4;
 }
@@ -1620,8 +1621,6 @@ nubank-strip{
   font-weight:800;
   text-decoration:none;
 }
-
-  </style>
 </head>
 <script>
   setTimeout(function () {
