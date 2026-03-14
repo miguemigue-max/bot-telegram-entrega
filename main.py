@@ -1821,3 +1821,450 @@ def my_orders():
 
     return render_page(content,title="Mis pedidos",user=user,orders=orders)
 
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+
+    user = current_user()
+    conn = get_db()
+
+    orders_today = q(conn,"SELECT COUNT(*) as c FROM orders WHERE date(created_at)=date('now')").fetchone()["c"]
+    users_total = q(conn,"SELECT COUNT(*) as c FROM users").fetchone()["c"]
+    pending_orders = q(conn,"SELECT COUNT(*) as c FROM orders WHERE status='Pendiente'").fetchone()["c"]
+    pending_payments = q(conn,"SELECT COUNT(*) as c FROM orders WHERE payment_status!='Pagado'").fetchone()["c"]
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Dashboard Admin</h2>
+
+<div class="stats">
+
+<div class="card stat">
+<div class="label">Pedidos hoy</div>
+<div class="value">{{orders_today}}</div>
+</div>
+
+<div class="card stat">
+<div class="label">Usuarios</div>
+<div class="value">{{users_total}}</div>
+</div>
+
+<div class="card stat">
+<div class="label">Pedidos pendientes</div>
+<div class="value">{{pending_orders}}</div>
+</div>
+
+<div class="card stat">
+<div class="label">Pagos por revisar</div>
+<div class="value">{{pending_payments}}</div>
+</div>
+
+</div>
+
+<div class="services-scroll">
+
+<a class="service-item" href="{{url_for('admin_orders')}}">
+<div class="icon">📦</div>
+<span>Pedidos</span>
+</a>
+
+<a class="service-item" href="{{url_for('admin_users')}}">
+<div class="icon">👥</div>
+<span>Usuarios</span>
+</a>
+
+<a class="service-item" href="{{url_for('admin_promos')}}">
+<div class="icon">🔥</div>
+<span>Promociones</span>
+</a>
+
+<a class="service-item" href="{{url_for('admin_resets')}}">
+<div class="icon">🔑</div>
+<span>Recuperaciones</span>
+</a>
+
+</div>
+
+</div>
+</div>
+
+"""
+
+    return render_page(
+        content,
+        title="Admin",
+        user=user,
+        orders_today=orders_today,
+        users_total=users_total,
+        pending_orders=pending_orders,
+        pending_payments=pending_payments
+    )
+
+
+@app.route("/admin/orders")
+@admin_required
+def admin_orders():
+
+    conn = get_db()
+
+    orders = q(conn,"SELECT * FROM orders ORDER BY id DESC LIMIT 100").fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Pedidos</h2>
+
+<table>
+
+<thead>
+<tr>
+<th>ID</th>
+<th>Usuario</th>
+<th>Producto</th>
+<th>Total</th>
+<th>Estado</th>
+<th>Pago</th>
+<th>Acciones</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for o in orders %}
+
+<tr>
+
+<td>#{{o['id']}}</td>
+
+<td>{{o['customer_name']}}</td>
+
+<td>{{o['service']}}</td>
+
+<td>{{o['total_cup']}}</td>
+
+<td>{{o['status']}}</td>
+
+<td>{{o['payment_status']}}</td>
+
+<td>
+
+<a class="btn btn-secondary" href="{{url_for('admin_update_order',order_id=o['id'],status='Procesando')}}">Procesar</a>
+
+<a class="btn btn-primary" href="{{url_for('admin_update_order',order_id=o['id'],status='Completado')}}">Completar</a>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Pedidos",user=current_user(),orders=orders)
+
+
+@app.route("/admin/order/<int:order_id>/<status>")
+@admin_required
+def admin_update_order(order_id,status):
+
+    conn = get_db()
+
+    q(conn,"UPDATE orders SET status=? WHERE id=?",(status,order_id))
+
+    conn.commit()
+    conn.close()
+
+    flash("Estado actualizado.","success")
+
+    return redirect(url_for("admin_orders"))
+
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+
+    conn = get_db()
+
+    users = q(conn,"SELECT * FROM users ORDER BY id DESC").fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Usuarios</h2>
+
+<table>
+
+<thead>
+<tr>
+<th>ID</th>
+<th>Nombre</th>
+<th>Email</th>
+<th>Tag</th>
+<th>Acción</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for u in users %}
+
+<tr>
+
+<td>{{u['id']}}</td>
+
+<td>{{u['first_name']}} {{u['last_name']}}</td>
+
+<td>{{u['email']}}</td>
+
+<td>{{u['profile_tag']}}</td>
+
+<td>
+
+<a class="btn btn-secondary" href="{{url_for('admin_wallet',user_id=u['id'])}}">Billetera</a>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Usuarios",user=current_user(),users=users)
+
+
+@app.route("/admin/wallet/<int:user_id>",methods=["GET","POST"])
+@admin_required
+def admin_wallet(user_id):
+
+    wallet = get_wallet(user_id)
+
+    if request.method == "POST":
+
+        currency = request.form.get("currency")
+        amount = parse_float(request.form.get("amount"),0)
+        direction = request.form.get("direction")
+
+        adjust_wallet(
+            user_id,
+            currency,
+            amount,
+            "Ajuste admin",
+            direction
+        )
+
+        flash("Saldo actualizado.","success")
+        return redirect(url_for("admin_wallet",user_id=user_id))
+
+    content = """
+
+<div class="page-wrap">
+<div class="container" style="max-width:700px;">
+
+<div class="card panel">
+
+<h2>Editar billetera</h2>
+
+<div class="wallet-grid">
+
+<div class="card wallet-card">
+<div class="wallet-label">CUP</div>
+<div class="wallet-amount">{{wallet['cup_balance']}}</div>
+</div>
+
+<div class="card wallet-card">
+<div class="wallet-label">USD</div>
+<div class="wallet-amount">{{wallet['usd_balance']}}</div>
+</div>
+
+<div class="card wallet-card">
+<div class="wallet-label">USDT</div>
+<div class="wallet-amount">{{wallet['usdt_balance']}}</div>
+</div>
+
+</div>
+
+<form method="post">
+
+<div>
+<label>Moneda</label>
+<select name="currency">
+<option>CUP</option>
+<option>USD</option>
+<option>USDT</option>
+</select>
+</div>
+
+<div>
+<label>Monto</label>
+<input name="amount">
+</div>
+
+<div>
+<label>Tipo</label>
+<select name="direction">
+<option value="credit">Agregar</option>
+<option value="debit">Restar</option>
+</select>
+</div>
+
+<button class="btn btn-primary">Actualizar saldo</button>
+
+</form>
+
+</div>
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Wallet admin",user=current_user(),wallet=wallet)
+
+
+@app.route("/admin/promos",methods=["GET","POST"])
+@admin_required
+def admin_promos():
+
+    conn = get_db()
+
+    if request.method == "POST":
+
+        title = request.form.get("title")
+        price = request.form.get("price_text")
+        price_cup = parse_float(request.form.get("price_cup"),0)
+        desc = request.form.get("description")
+        b1 = request.form.get("b1")
+        b2 = request.form.get("b2")
+        b3 = request.form.get("b3")
+
+        q(conn,"UPDATE promotions SET is_active=0")
+
+        q(conn,"""
+        INSERT INTO promotions
+        (title,price_text,price_cup,description,bonus_1,bonus_2,bonus_3,is_active,created_at)
+        VALUES (?,?,?,?,?,?,?,1,?)
+        """,(
+            title,
+            price,
+            price_cup,
+            desc,
+            b1,
+            b2,
+            b3,
+            now_str()
+        ))
+
+        conn.commit()
+
+    promos = q(conn,"SELECT * FROM promotions ORDER BY id DESC").fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Promociones</h2>
+
+<form method="post" class="card panel">
+
+<input name="title" placeholder="Título">
+<input name="price_text" placeholder="Precio visible">
+<input name="price_cup" placeholder="Precio CUP">
+<input name="description" placeholder="Descripción">
+<input name="b1" placeholder="Bonus 1">
+<input name="b2" placeholder="Bonus 2">
+<input name="b3" placeholder="Bonus 3">
+
+<button class="btn btn-primary">Crear promoción</button>
+
+</form>
+
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Promociones",user=current_user(),promos=promos)
+
+
+@app.route("/admin/resets")
+@admin_required
+def admin_resets():
+
+    conn = get_db()
+
+    resets = q(conn,"SELECT * FROM password_resets ORDER BY id DESC").fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Solicitudes recuperación</h2>
+
+<table>
+
+<thead>
+<tr>
+<th>Email</th>
+<th>Nota</th>
+<th>Estado</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for r in resets %}
+
+<tr>
+
+<td>{{r['email']}}</td>
+<td>{{r['note']}}</td>
+<td>{{r['status']}}</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Recuperaciones",user=current_user(),resets=resets)
+
