@@ -2172,3 +2172,325 @@ def convert_page():
         usdt_to_usd=usdt_to_usd
     )
 
+@app.route("/referrals")
+@login_required
+def referrals_page():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    settings = get_settings()
+    reward = parse_float(settings.get("referral_reward_usdt", "0.25"), 0.25)
+    required_deposit = parse_float(settings.get("referral_required_deposit_usd", "5"), 5)
+    bonus_min = parse_float(settings.get("bonus_withdraw_min_usdt", "1"), 1)
+
+    wallet = get_wallet(user["id"])
+
+    conn = get_db()
+    referrals = q(conn, """
+        SELECT
+            r.*,
+            u.first_name,
+            u.last_name,
+            u.email,
+            u.profile_tag
+        FROM referrals r
+        JOIN users u ON u.id = r.invited_user_id
+        WHERE r.inviter_user_id = ?
+        ORDER BY r.id DESC
+    """, (user["id"],)).fetchall()
+    conn.close()
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="grid-2">
+          <div class="panel">
+            <h2 style="margin:0 0 8px;">Programa de referidos</h2>
+            <p class="subtitle" style="margin:0 0 18px;">
+              Invita usuarios reales y gana bonus cuando completen su primer depósito válido.
+            </p>
+
+            <div class="wallet-box" style="margin-bottom:16px;">
+              <div class="wallet-label">Tu código</div>
+              <div class="wallet-amount" style="font-size:1.7rem;">{{ user["referral_code"] }}</div>
+            </div>
+
+            <div class="panel" style="padding:18px;">
+              <div class="subtitle">
+                Bono por referido válido: <strong>{{ "%.2f"|format(reward) }} USDT</strong><br>
+                Depósito mínimo del referido: <strong>{{ "%.2f"|format(required_deposit) }} USD</strong><br>
+                Mínimo para retirar bonus: <strong>{{ "%.2f"|format(bonus_min) }} USDT</strong><br><br>
+                El bonus no se paga por registro. Se activa solo cuando el referido haga
+                un depósito aprobado de al menos {{ "%.2f"|format(required_deposit) }} USD.
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2 style="margin:0 0 8px;">Saldo bonus</h2>
+            <p class="subtitle" style="margin:0 0 18px;">
+              Este saldo se guarda separado del saldo normal.
+            </p>
+
+            <div class="wallet-grid" style="grid-template-columns:1fr;">
+              <div class="wallet-box">
+                <div class="wallet-label">Bonus USDT</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <div>
+            <h2 style="margin:0 0 6px;">Mis referidos</h2>
+            <div class="subtitle">Estado de cada referido registrado.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          {% if referrals %}
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>@tag</th>
+                  <th>Correo</th>
+                  <th>Bono</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ref in referrals %}
+                <tr>
+                  <td data-label="Nombre">{{ ref["first_name"] }} {{ ref["last_name"] }}</td>
+                  <td data-label="@tag">{{ ref["profile_tag"] }}</td>
+                  <td data-label="Correo">{{ ref["email"] }}</td>
+                  <td data-label="Bono">{{ "%.2f"|format(ref["reward_usdt"]) }} USDT</td>
+                  <td data-label="Estado"><span class="status status-{{ ref['status'] }}">{{ ref["status"] }}</span></td>
+                  <td data-label="Fecha">{{ ref["created_at"] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="empty">Todavía no tienes referidos.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Referidos",
+        user=user,
+        wallet=wallet,
+        referrals=referrals,
+        reward=reward,
+        required_deposit=required_deposit,
+        bonus_min=bonus_min
+    )
+
+
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    user = current_user()
+
+    conn = get_db()
+    users = q(conn, "SELECT * FROM users ORDER BY id DESC LIMIT 50").fetchall()
+    deposits = q(conn, """
+        SELECT d.*, u.email, u.profile_tag
+        FROM deposits d
+        JOIN users u ON u.id = d.user_id
+        ORDER BY d.id DESC
+        LIMIT 50
+    """).fetchall()
+    withdrawals = q(conn, """
+        SELECT w.*, u.email, u.profile_tag
+        FROM withdrawals w
+        JOIN users u ON u.id = w.user_id
+        ORDER BY w.id DESC
+        LIMIT 50
+    """).fetchall()
+    conn.close()
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="section-title">
+          <div>
+            <h2 style="margin:0 0 6px;">Panel admin</h2>
+            <div class="subtitle">Controla usuarios, depósitos y retiros.</div>
+          </div>
+          <a class="btn btn-secondary" href="{{ url_for('admin_settings') }}">Configuración</a>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3 style="margin:0 0 12px;">Usuarios recientes</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre</th>
+                  <th>Correo</th>
+                  <th>@tag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in users %}
+                <tr>
+                  <td data-label="ID">{{ u["id"] }}</td>
+                  <td data-label="Nombre">{{ u["first_name"] }} {{ u["last_name"] }}</td>
+                  <td data-label="Correo">{{ u["email"] }}</td>
+                  <td data-label="@tag">{{ u["profile_tag"] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3 style="margin:0 0 12px;">Depósitos</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Usuario</th>
+                  <th>Moneda</th>
+                  <th>Monto</th>
+                  <th>Estado</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for d in deposits %}
+                <tr>
+                  <td data-label="ID">{{ d["id"] }}</td>
+                  <td data-label="Usuario">{{ d["email"] }}</td>
+                  <td data-label="Moneda">{{ d["currency"] }}</td>
+                  <td data-label="Monto">{{ "%.2f"|format(d["amount"]) }}</td>
+                  <td data-label="Estado"><span class="status status-{{ d['status']|lower }}">{{ d["status"] }}</span></td>
+                  <td data-label="Acción">
+                    {% if d["status"] == "Pendiente" %}
+                      <a class="btn btn-primary" href="{{ url_for('approve_deposit', deposit_id=d['id']) }}">Aprobar</a>
+                    {% else %}
+                      <span class="subtitle">Procesado</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:20px;">
+          <h3 style="margin:0 0 12px;">Retiros</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Usuario</th>
+                <th>Método</th>
+                <th>Moneda</th>
+                <th>Monto</th>
+                <th>Estado</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for w in withdrawals %}
+              <tr>
+                <td data-label="ID">{{ w["id"] }}</td>
+                <td data-label="Usuario">{{ w["email"] }}</td>
+                <td data-label="Método">{{ w["method"] }}</td>
+                <td data-label="Moneda">{{ w["currency"] }}</td>
+                <td data-label="Monto">{{ "%.2f"|format(w["amount"]) }}</td>
+                <td data-label="Estado"><span class="status status-{{ w['status']|lower }}">{{ w["status"] }}</span></td>
+                <td data-label="Acción">
+                  {% if w["status"] == "Pendiente" %}
+                    <a class="btn btn-primary" href="{{ url_for('approve_withdraw', withdraw_id=w['id']) }}">Completar</a>
+                  {% else %}
+                    <span class="subtitle">Procesado</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Admin", user=user, users=users, deposits=deposits, withdrawals=withdrawals)
+
+
+@app.route("/admin/approve_deposit/<int:deposit_id>")
+@admin_required
+def approve_deposit(deposit_id):
+    user = current_user()
+    conn = get_db()
+    deposit = q(conn, "SELECT * FROM deposits WHERE id = ?", (deposit_id,)).fetchone()
+
+    if not deposit:
+        conn.close()
+        flash("Depósito no encontrado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if deposit["status"] != "Pendiente":
+        conn.close()
+        flash("Ese depósito ya fue procesado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    q(conn, "UPDATE deposits SET status = 'Aprobado' WHERE id = ?", (deposit_id,))
+    conn.commit()
+    conn.close()
+
+    adjust_wallet(
+        deposit["user_id"],
+        deposit["currency"],
+        deposit["amount"],
+        "Depósito aprobado",
+        "credit",
+        "deposit",
+        str(deposit_id)
+    )
+
+    if deposit["currency"] == "USD":
+        activate_referral_if_needed(deposit["user_id"], deposit["amount"])
+
+    log_action(user["id"], "approve_deposit", f"deposit_id={deposit_id}")
+    flash("Depósito aprobado correctamente.", "success")
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/approve_withdraw/<int:withdraw_id>")
+@admin_required
+def approve_withdraw(withdraw_id):
+    user = current_user()
+    conn = get_db()
+    withdraw = q(conn, "SELECT * FROM withdrawals WHERE id = ?", (withdraw_id,)).fetchone()
+
+    if not withdraw:
+        conn.close()
+        flash("Retiro no encontrado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if withdraw["status"] != "Pendiente":
+        conn.close()
+        flash("Ese retiro ya fue procesado.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    q(conn, "UPDATE withdrawals SET status = 'Completado' WHERE id = ?", (withdraw_id,))
+    conn.commit()
+    conn.close()
+
+    log_action(user["id"], "approve_withdraw", f"withdraw_id={withdraw_id}")
+    flash("Retiro marcado como completado.", "success")
+    return redirect(url_for("admin_dashboard"))
+
+
