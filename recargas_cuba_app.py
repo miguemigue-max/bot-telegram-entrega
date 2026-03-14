@@ -1610,3 +1610,293 @@ def register_step(step):
         data=data,
         masked_carnet=card_mask(data.get("carnet", "")),
     )
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user():
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "").strip()
+
+        conn = get_db()
+        user = q(conn, "SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+        if not user:
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        elif user["is_locked"]:
+            conn.close()
+            flash("Tu cuenta está bloqueada. Contacta soporte o solicita recuperación.", "error")
+        elif not check_password_hash(user["password"], password):
+            failed = int(user["failed_attempts"]) + 1
+            is_locked = 1 if failed >= 5 else 0
+            q(conn, "UPDATE users SET failed_attempts = ?, is_locked = ? WHERE id = ?", (failed, is_locked, user["id"]))
+            conn.commit()
+            conn.close()
+            flash("Correo o contraseña incorrectos.", "error")
+        else:
+            q(
+                conn,
+                "UPDATE users SET failed_attempts = 0, is_locked = 0, last_login_at = ? WHERE id = ?",
+                (now_str(), user["id"]),
+            )
+            conn.commit()
+            conn.close()
+
+            session["user_id"] = user["id"]
+            log_action(user["id"], "user_login", "Inicio de sesión correcto")
+            flash("Sesión iniciada correctamente.", "success")
+
+            if user["is_admin"]:
+                return redirect(url_for("admin_dashboard"))
+            return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="auth-card card">
+        <div class="badge">Accede a tu cuenta</div>
+        <h2>Entrar</h2>
+        <p class="subtitle" style="margin-top:0;">
+          Consulta tu saldo, transfiere, deposita, retira y usa tus servicios desde una sola app.
+        </p>
+
+        <form method="post">
+          <div>
+            <label>Correo electrónico</label>
+            <input type="email" name="email" placeholder="tucorreo@email.com" required>
+          </div>
+
+          <div>
+            <label>Contraseña</label>
+            <input type="password" name="password" placeholder="Tu contraseña" required>
+          </div>
+
+          <button class="btn btn-primary" type="submit">
+            <span class="loader"></span>Entrar
+          </button>
+        </form>
+
+        <p class="subtitle" style="font-size:1rem; margin:16px 0 0;">
+          ¿No tienes cuenta? <a href="{{ url_for('register_step', step=1) }}"><strong>Créala aquí</strong></a><br>
+          <a href="{{ url_for('forgot_password') }}"><strong>¿Olvidaste tu contraseña?</strong></a>
+        </p>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Entrar", user=None, hide_container=True)
+
+
+@app.route("/logout")
+def logout():
+    user = current_user()
+    if user:
+        log_action(user["id"], "user_logout", "Cierre de sesión")
+    session.clear()
+    flash("Has cerrado sesión.", "info")
+    return redirect(url_for("home"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        note = request.form.get("note", "").strip()
+
+        if not email:
+            flash("Escribe tu correo.", "error")
+        else:
+            conn = get_db()
+            q(conn, """
+                INSERT INTO password_resets (email, note, status, created_at)
+                VALUES (?, ?, 'Pendiente', ?)
+            """, (email, note, now_str()))
+            conn.commit()
+            conn.close()
+            flash("Solicitud enviada. Revisaremos tu caso.", "success")
+            return redirect(url_for("login"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="auth-card card">
+        <div class="badge">Seguridad</div>
+        <h2>Recuperar contraseña</h2>
+        <p class="subtitle" style="margin-top:0;">
+          Escribe tu correo y una nota opcional. Nuestro equipo revisará tu solicitud.
+        </p>
+
+        <form method="post">
+          <div>
+            <label>Correo electrónico</label>
+            <input type="email" name="email" placeholder="tucorreo@email.com" required>
+          </div>
+
+          <div>
+            <label>Nota opcional</label>
+            <textarea name="note" placeholder="Ej: olvidé mi contraseña"></textarea>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Enviar solicitud</button>
+        </form>
+      </div>
+    </div>
+    """
+    return render_page(content, title="Recuperar contraseña", user=None, hide_container=True)
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user = current_user()
+
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "POST":
+        photo = request.files.get("profile_photo")
+        city = request.form.get("city", "").strip()
+        photo_path = user["profile_photo"]
+
+        if city not in CITIES_CUBA:
+            flash("Selecciona una ciudad válida.", "error")
+            return redirect(url_for("profile"))
+
+        if photo and photo.filename:
+            safe_name = secure_filename(photo.filename)
+            ext = os.path.splitext(safe_name)[1].lower()
+
+            if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+                flash("La foto debe ser JPG, PNG o WEBP.", "error")
+                return redirect(url_for("profile"))
+
+            final_name = f"avatar_{uuid.uuid4().hex}{ext}"
+            final_path = UPLOAD_DIR / final_name
+            photo.save(final_path)
+            photo_path = str(final_path)
+
+        conn = get_db()
+        q(conn, "UPDATE users SET city = ?, profile_photo = ? WHERE id = ?", (city, photo_path, user["id"]))
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "profile_updated", "Actualizó ciudad o foto de perfil")
+        flash("Perfil actualizado correctamente.", "success")
+        return redirect(url_for("profile"))
+
+    wallet = get_wallet(user["id"])
+    profile_photo_url = url_for("uploaded_file", filename=os.path.basename(user["profile_photo"])) if user["profile_photo"] else None
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:1000px;">
+        <div class="profile-hero card">
+          <div class="avatar">
+            {% if profile_photo_url %}
+              <img src="{{ profile_photo_url }}" alt="Foto">
+            {% else %}
+              {{ user['first_name'][0] }}{{ user['last_name'][0] }}
+            {% endif %}
+          </div>
+
+          <div>
+            <h2 style="margin-bottom:6px;">{{ user['first_name'] }} {{ user['last_name'] }}</h2>
+            <div class="tag-pill">{{ user['profile_tag'] }}</div>
+            <p class="subtitle" style="font-size:1rem; margin-top:14px; margin-bottom:0;">
+              {{ user['email'] }} · {{ user['city'] }}
+            </p>
+            <p class="subtitle" style="font-size:.95rem; margin-top:10px; margin-bottom:0;">
+              Código de referido: <strong>{{ user['referral_code'] }}</strong>
+            </p>
+          </div>
+
+          <a class="btn btn-secondary" href="{{ url_for('wallet_page') }}">Ver billetera</a>
+        </div>
+
+        <div class="grid-2">
+          <div class="card panel">
+            <h3>Datos personales</h3>
+            <div style="display:grid; gap:14px;">
+              <div>
+                <label>Nombre</label>
+                <input value="{{ user['first_name'] }}" disabled>
+              </div>
+
+              <div>
+                <label>Apellidos</label>
+                <input value="{{ user['last_name'] }}" disabled>
+              </div>
+
+              <div>
+                <label>Número de carnet</label>
+                <input value="{{ masked_carnet }}" disabled>
+              </div>
+
+              <div>
+                <label>@tag</label>
+                <input value="{{ user['profile_tag'] }}" disabled>
+              </div>
+
+              <div class="promo-box" style="margin-top:0;">
+                <strong>Datos bloqueados</strong>
+                <ul>
+                  <li>Nombre, apellidos, carnet y @tag no se pueden editar después del registro.</li>
+                  <li>Esto protege la seguridad e integridad de la cuenta.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="card panel">
+            <h3>Actualizar perfil visible</h3>
+            <form method="post" enctype="multipart/form-data">
+              <div>
+                <label>Ciudad</label>
+                <select name="city" required>
+                  {% for city in cities %}
+                    <option value="{{ city }}" {% if user['city'] == city %}selected{% endif %}>{{ city }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <label>Foto de perfil</label>
+                <input type="file" name="profile_photo">
+              </div>
+
+              <button class="btn btn-primary" type="submit">Guardar cambios</button>
+            </form>
+
+            <div class="wallet-grid" style="margin-top:18px; grid-template-columns:repeat(2,minmax(0,1fr));">
+              <div class="card wallet-card">
+                <div class="wallet-label">USD</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['usd_balance']) }}</div>
+              </div>
+              <div class="card wallet-card">
+                <div class="wallet-label">USDT</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['usdt_balance']) }}</div>
+              </div>
+              <div class="card wallet-card">
+                <div class="wallet-label">CUP</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['cup_balance']) }}</div>
+              </div>
+              <div class="card wallet-card">
+                <div class="wallet-label">Bonus USDT</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['bonus_usdt_balance']) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(
+        content,
+        title="Mi perfil",
+        user=user,
+        wallet=wallet,
+        profile_photo_url=profile_photo_url,
+        cities=CITIES_CUBA,
+        masked_carnet=card_mask(user["carnet"]),
+    )
+
