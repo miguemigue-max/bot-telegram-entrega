@@ -929,6 +929,208 @@ BASE_HTML = """
     padding:28px 0 20px;
   }
 }
+
+  .nubank-home{
+  background:#f4ecfb;
+  min-height:100vh;
+}
+
+.nubank-header{
+  background:linear-gradient(180deg,#8A05BE 0%, #a020f0 100%);
+  color:white;
+  padding:24px 0 34px;
+  border-bottom-left-radius:28px;
+  border-bottom-right-radius:28px;
+}
+
+.nubank-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:18px;
+}
+
+.nubank-avatar{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  background:rgba(255,255,255,0.18);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:900;
+  font-size:1rem;
+}
+
+.nubank-icons{
+  display:flex;
+  gap:16px;
+  font-size:1rem;
+  opacity:.95;
+}
+
+.nubank-greeting{
+  font-size:1.15rem;
+  font-weight:800;
+}
+
+.nubank-body{
+  margin-top:-10px;
+  padding-bottom:40px;
+}
+
+.nubank-card.main-account{
+  background:#ffffff;
+  border-radius:24px;
+  padding:22px;
+  box-shadow:0 12px 30px rgba(138,5,190,0.10);
+  margin-bottom:16px;
+}
+
+.account-row{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.account-title{
+  font-size:1rem;
+  color:#191919;
+  font-weight:700;
+  margin-bottom:8px;
+}
+
+.account-balance{
+  font-size:2.2rem;
+  font-weight:900;
+  color:#191919;
+  line-height:1;
+}
+
+.account-arrow{
+  font-size:1.8rem;
+  color:#777;
+  line-height:1;
+}
+
+.nubank-actions{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin-top:22px;
+}
+
+.nubank-action{
+  text-align:center;
+}
+
+.nubank-action-icon{
+  width:58px;
+  height:58px;
+  margin:0 auto 10px;
+  border-radius:50%;
+  background:#f1eef6;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.3rem;
+  color:#191919;
+  font-weight:900;
+}
+
+.nubank-action-label{
+  font-size:.95rem;
+  color:#191919;
+  font-weight:700;
+}
+
+.nubank-strip-card{
+  background:#ffffff;
+  border-radius:18px;
+  padding:16px 18px;
+  margin-bottom:14px;
+  box-shadow:0 10px 24px rgba(138,5,190,0.08);
+  color:#191919;
+}
+
+.nubank-wallet-list{
+  display:grid;
+  gap:14px;
+  margin-bottom:18px;
+}
+
+.nubank-wallet-item{
+  background:#ffffff;
+  border-radius:22px;
+  padding:22px;
+  box-shadow:0 10px 24px rgba(138,5,190,0.08);
+}
+
+.wallet-name{
+  color:#6f6f7b;
+  font-size:1rem;
+  margin-bottom:12px;
+}
+
+.wallet-value{
+  font-size:2rem;
+  font-weight:900;
+  color:#191919;
+  line-height:1;
+}
+
+.nubank-transactions{
+  display:grid;
+  gap:12px;
+}
+
+.nubank-tx{
+  background:#ffffff;
+  border-radius:20px;
+  padding:18px;
+  box-shadow:0 10px 24px rgba(138,5,190,0.08);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+}
+
+.nubank-tx-title{
+  font-weight:800;
+  color:#191919;
+  margin-bottom:6px;
+}
+
+.nubank-tx-sub{
+  color:#7a7a87;
+  font-size:.92rem;
+}
+
+.nubank-tx-amount{
+  font-size:1.15rem;
+  font-weight:900;
+}
+
+.tx-plus{ color:#16a34a; }
+.tx-minus{ color:#d11a4a; }
+
+@media (max-width:640px){
+  .nubank-actions{
+    grid-template-columns:repeat(4,1fr);
+    gap:10px;
+  }
+
+  .nubank-action-icon{
+    width:54px;
+    height:54px;
+    font-size:1.2rem;
+  }
+
+  .account-balance{
+    font-size:2rem;
+  }
+}
   </style>
 </head>
 <body>
@@ -1008,142 +1210,134 @@ def home():
     user = current_user()
 
     if user and not user["is_admin"]:
-        wallet = get_wallet(user["id"])
+    wallet = get_wallet(user["id"])
 
-        conn = get_db()
-        txs = q(conn, """
-            SELECT * FROM wallet_transactions
-            WHERE user_id = ?
-            ORDER BY id DESC
-            LIMIT 6
-        """, (user["id"],)).fetchall()
-        conn.close()
+    conn = get_db()
+    txs = q(conn, """
+        SELECT * FROM wallet_transactions
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 5
+    """, (user["id"],)).fetchall()
+    conn.close()
 
-        content = """
-        <section class="page-wrap wallet-hero">
-          <div class="container">
-            <div class="wallet-top">
-              <div>
-                <div class="subtitle" style="margin:0 0 8px;">Saldo total</div>
-                <div class="wallet-balance">${{ "%.2f"|format(total_balance) }}</div>
-              </div>
-              <div class="quick-actions">
-                <a class="quick-card" href="{{ url_for('transfer_money') }}">Enviar</a>
-                <a class="quick-card" href="{{ url_for('deposit_page') }}">Depositar</a>
-                <a class="quick-card" href="{{ url_for('withdraw_page') }}">Retirar</a>
-              </div>
-            </div>
-
-            <div class="wallet-grid">
-              <div class="wallet-box">
-                <div class="wallet-label">USD</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">CUP</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">Bonus USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
-              </div>
-            </div>
-
-            <div class="section-title">
-              <div>
-                <h2 style="margin:0 0 6px;">Últimas transacciones</h2>
-                <div class="subtitle">Actividad reciente de tu cuenta.</div>
-              </div>
-              <a href="{{ url_for('wallet_page') }}" class="subtitle" style="font-weight:800;">Ver todas</a>
-            </div>
-
-            <div class="tx-list">
-              {% if txs %}
-                {% for tx in txs %}
-                <div class="tx-card">
-                  <div class="tx-left">
-                    <div class="tx-icon">↔</div>
-                    <div>
-                      <div class="tx-title">{{ tx["description"] }}</div>
-                      <div class="tx-sub">{{ tx["currency"] }} · {{ tx["created_at"] }}</div>
-                    </div>
-                  </div>
-                  <div class="tx-amount {% if tx['direction']=='credit' %}tx-plus{% else %}tx-minus{% endif %}">
-                    {% if tx['direction']=='credit' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx["amount"]) }}
-                  </div>
-                </div>
-                {% endfor %}
-              {% else %}
-                <div class="tx-card">
-                  <div class="tx-left">
-                    <div class="tx-icon">◎</div>
-                    <div>
-                      <div class="tx-title">Sin movimientos todavía</div>
-                      <div class="tx-sub">Tu actividad aparecerá aquí.</div>
-                    </div>
-                  </div>
-                </div>
-              {% endif %}
-            </div>
-          </div>
-        </section>
-        """
-        return render_page(
-            content,
-            title="Inicio",
-            user=user,
-            wallet=wallet,
-            txs=txs,
-            total_balance=total_usd_equivalent(wallet)
-        )
-
-    if user and user["is_admin"]:
-        return redirect(url_for("admin_dashboard"))
+    first_name = user["first_name"]
 
     content = """
-    <section class="hero">
-      <div class="container hero-grid">
-        <div>
-          <div class="hero-badge">● Nuevo: cuenta digital para Cuba</div>
-          <h1 class="hero-title">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
-          <p class="hero-subtitle">
-            Guarda saldo en USD, USDT y CUP. Deposita, retira, convierte y transfiere dinero
-            desde una sola cuenta digital pensada para Cuba.
-          </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="{{ url_for('register_step', step=1) }}">Crear cuenta gratis →</a>
-            <a class="btn btn-secondary" href="{{ url_for('login') }}">Entrar →</a>
+    <section class="nubank-home">
+      <div class="nubank-header">
+        <div class="container">
+          <div class="nubank-topbar">
+            <div class="nubank-avatar">◉</div>
+            <div class="nubank-icons">
+              <span>◌</span>
+              <span>⌁</span>
+              <span>✦</span>
+            </div>
+          </div>
+
+          <div class="nubank-greeting">Hola, {{ first_name }}</div>
+        </div>
+      </div>
+
+      <div class="container nubank-body">
+        <div class="nubank-card main-account">
+          <div class="account-row">
+            <div>
+              <div class="account-title">Cuenta</div>
+              <div class="account-balance">${{ "%.2f"|format(total_balance) }}</div>
+            </div>
+            <div class="account-arrow">›</div>
+          </div>
+
+          <div class="nubank-actions">
+            <a href="{{ url_for('transfer_money') }}" class="nubank-action">
+              <div class="nubank-action-icon">↗</div>
+              <div class="nubank-action-label">Enviar</div>
+            </a>
+
+            <a href="{{ url_for('deposit_page') }}" class="nubank-action">
+              <div class="nubank-action-icon">＋</div>
+              <div class="nubank-action-label">Depositar</div>
+            </a>
+
+            <a href="{{ url_for('withdraw_page') }}" class="nubank-action">
+              <div class="nubank-action-icon">↓</div>
+              <div class="nubank-action-label">Retirar</div>
+            </a>
+
+            <a href="{{ url_for('convert_page') }}" class="nubank-action">
+              <div class="nubank-action-icon">⇄</div>
+              <div class="nubank-action-label">Convertir</div>
+            </a>
           </div>
         </div>
 
-        <div class="hero-card hero-figure">
-          <div class="float-chip" style="left:24px;top:24px;">Nuevo: cuenta digital y P2P</div>
-          <div class="coin" style="left:18px;top:110px;">₿</div>
-          <div class="coin" style="right:22px;top:160px;">◇</div>
-          <div class="coin" style="right:36px;bottom:54px;">₮</div>
+        <div class="nubank-strip-card">
+          <strong>Mis saldos</strong>
+        </div>
 
-          <div class="hero-figure-title">
-            Tu cuenta<br>digital<br>en <span class="gradient-word">dólares</span>
-            <span class="under-line"></span>
+        <div class="nubank-wallet-list">
+          <div class="nubank-wallet-item">
+            <div class="wallet-name">USD</div>
+            <div class="wallet-value">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
           </div>
 
-          <div class="hero-desc">
-            Compra, vende e intercambia USD, USDT y CUP.
-            Transfiere saldo entre usuarios y maneja tu dinero desde un solo lugar.
+          <div class="nubank-wallet-item">
+            <div class="wallet-name">USDT</div>
+            <div class="wallet-value">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
           </div>
+
+          <div class="nubank-wallet-item">
+            <div class="wallet-name">CUP</div>
+            <div class="wallet-value">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+          </div>
+
+          <div class="nubank-wallet-item">
+            <div class="wallet-name">Bonus USDT</div>
+            <div class="wallet-value">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+          </div>
+        </div>
+
+        <div class="nubank-strip-card">
+          <strong>Últimos movimientos</strong>
+        </div>
+
+        <div class="nubank-transactions">
+          {% if txs %}
+            {% for tx in txs %}
+              <div class="nubank-tx">
+                <div>
+                  <div class="nubank-tx-title">{{ tx["description"] }}</div>
+                  <div class="nubank-tx-sub">{{ tx["currency"] }} · {{ tx["created_at"] }}</div>
+                </div>
+                <div class="nubank-tx-amount {% if tx['direction'] == 'credit' %}tx-plus{% else %}tx-minus{% endif %}">
+                  {% if tx['direction'] == 'credit' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx["amount"]) }}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="nubank-tx">
+              <div>
+                <div class="nubank-tx-title">Sin movimientos todavía</div>
+                <div class="nubank-tx-sub">Tu actividad aparecerá aquí.</div>
+              </div>
+            </div>
+          {% endif %}
         </div>
       </div>
     </section>
-
-    <div class="footer">
-      <div class="container">Banco Cuba · Cuenta digital y pagos</div>
-    </div>
     """
-    return render_page(content, title="Banco Cuba", user=None)
+
+    return render_page(
+        content,
+        title="Inicio",
+        user=user,
+        wallet=wallet,
+        txs=txs,
+        total_balance=total_usd_equivalent(wallet),
+        first_name=first_name
+    )
 
 
 @app.route("/uploads/<path:filename>")
