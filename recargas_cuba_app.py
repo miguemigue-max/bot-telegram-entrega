@@ -1217,90 +1217,109 @@ def home():
             SELECT * FROM wallet_transactions
             WHERE user_id = ?
             ORDER BY id DESC
-            LIMIT 5
+            LIMIT 4
         """, (user["id"],)).fetchall()
         conn.close()
 
         content = """
-        <section class="page-wrap">
-          <div class="container">
-            <div class="panel" style="margin-bottom:18px;">
-              <div class="subtitle" style="margin:0 0 8px;">Saldo total</div>
-              <div class="wallet-balance" style="font-size:4rem;">${{ "%.2f"|format(total_balance) }}</div>
-            </div>
-
-            <div class="wallet-grid" style="margin-bottom:18px;">
-              <a class="wallet-box" href="{{ url_for('transfer_money') }}" style="text-decoration:none;">
-                <div class="wallet-label">Acción</div>
-                <div class="wallet-amount" style="font-size:1.4rem;">Enviar</div>
-              </a>
-
-              <a class="wallet-box" href="{{ url_for('deposit_page') }}" style="text-decoration:none;">
-                <div class="wallet-label">Acción</div>
-                <div class="wallet-amount" style="font-size:1.4rem;">Depositar</div>
-              </a>
-
-              <a class="wallet-box" href="{{ url_for('withdraw_page') }}" style="text-decoration:none;">
-                <div class="wallet-label">Acción</div>
-                <div class="wallet-amount" style="font-size:1.4rem;">Retirar</div>
-              </a>
-
-              <a class="wallet-box" href="{{ url_for('convert_page') }}" style="text-decoration:none;">
-                <div class="wallet-label">Acción</div>
-                <div class="wallet-amount" style="font-size:1.4rem;">Convertir</div>
-              </a>
-            </div>
-
-            <div class="wallet-grid" style="margin-bottom:18px;">
-              <div class="wallet-box">
-                <div class="wallet-label">USD</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">CUP</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
-              </div>
-              <div class="wallet-box">
-                <div class="wallet-label">Bonus USDT</div>
-                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+        <section class="nubank-home">
+          <div class="nubank-header">
+            <div class="container">
+              <div class="nubank-top">
+                <div class="nubank-user">
+                  <div class="nubank-avatar">◉</div>
+                  <div class="nubank-hello">Hola, {{ user["first_name"] }}</div>
+                </div>
+                <div class="nubank-mini-icons">
+                  <span>◌</span>
+                  <span>⌁</span>
+                  <span>✦</span>
+                </div>
               </div>
             </div>
+          </div>
 
-            <div class="section-title">
-              <div>
-                <h2 style="margin:0 0 6px;">Últimos movimientos</h2>
-                <div class="subtitle">Actividad reciente de tu cuenta.</div>
+          <div class="container nubank-main">
+            <div class="nubank-section-card">
+              <div class="nubank-row">
+                <div>
+                  <div class="nubank-section-title">Cuenta</div>
+                  <div class="nubank-balance">${{ "%.2f"|format(total_balance) }}</div>
+                </div>
+                <div class="nubank-arrow">›</div>
+              </div>
+
+              <div class="nubank-actions-row">
+                <a href="{{ url_for('transfer_money') }}" class="nubank-action-btn">
+                  <div class="nubank-action-icon">↗</div>
+                  <div class="nubank-action-text">Enviar</div>
+                </a>
+
+                <a href="{{ url_for('deposit_page') }}" class="nubank-action-btn">
+                  <div class="nubank-action-icon">＋</div>
+                  <div class="nubank-action-text">Depositar</div>
+                </a>
+
+                <a href="{{ url_for('withdraw_page') }}" class="nubank-action-btn">
+                  <div class="nubank-action-icon">↓</div>
+                  <div class="nubank-action-text">Retirar</div>
+                </a>
+
+                <a href="{{ url_for('convert_page') }}" class="nubank-action-btn">
+                  <div class="nubank-action-icon">⇄</div>
+                  <div class="nubank-action-text">Convertir</div>
+                </a>
               </div>
             </div>
 
-            <div class="tx-list">
+            <div class="nubank-strip">
+              <div class="nubank-strip-icon">⌁</div>
+              <div class="nubank-strip-text">Mis saldos</div>
+            </div>
+
+            <div class="nubank-wallet-card">
+              <div class="nubank-wallet-title">USD</div>
+              <div class="nubank-wallet-value">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+            </div>
+
+            <div class="nubank-wallet-card">
+              <div class="nubank-wallet-title">USDT</div>
+              <div class="nubank-wallet-value">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+            </div>
+
+            <div class="nubank-wallet-card">
+              <div class="nubank-wallet-title">CUP</div>
+              <div class="nubank-wallet-value">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+            </div>
+
+            <div class="nubank-wallet-card">
+              <div class="nubank-wallet-title">Bonus USDT</div>
+              <div class="nubank-wallet-value">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+            </div>
+
+            <div class="nubank-strip" style="margin-top:18px;">
+              <div class="nubank-strip-icon">◎</div>
+              <div class="nubank-strip-text">Últimos movimientos</div>
+            </div>
+
+            <div class="nubank-tx-list">
               {% if txs %}
                 {% for tx in txs %}
-                  <div class="tx-card">
-                    <div class="tx-left">
-                      <div class="tx-icon">↔</div>
-                      <div>
-                        <div class="tx-title">{{ tx["description"] }}</div>
-                        <div class="tx-sub">{{ tx["currency"] }} · {{ tx["created_at"] }}</div>
-                      </div>
+                  <div class="nubank-tx-item">
+                    <div>
+                      <div class="nubank-tx-title">{{ tx["description"] }}</div>
+                      <div class="nubank-tx-sub">{{ tx["currency"] }} · {{ tx["created_at"] }}</div>
                     </div>
-                    <div class="tx-amount {% if tx['direction']=='credit' %}tx-plus{% else %}tx-minus{% endif %}">
-                      {% if tx['direction']=='credit' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx["amount"]) }}
+                    <div class="nubank-tx-amount {% if tx['direction'] == 'credit' %}tx-plus{% else %}tx-minus{% endif %}">
+                      {% if tx['direction'] == 'credit' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx["amount"]) }}
                     </div>
                   </div>
                 {% endfor %}
               {% else %}
-                <div class="tx-card">
-                  <div class="tx-left">
-                    <div class="tx-icon">◎</div>
-                    <div>
-                      <div class="tx-title">Sin movimientos todavía</div>
-                      <div class="tx-sub">Tu actividad aparecerá aquí.</div>
-                    </div>
+                <div class="nubank-tx-item">
+                  <div>
+                    <div class="nubank-tx-title">Sin movimientos todavía</div>
+                    <div class="nubank-tx-sub">Tu actividad aparecerá aquí.</div>
                   </div>
                 </div>
               {% endif %}
@@ -1321,12 +1340,12 @@ def home():
         return redirect(url_for("admin_dashboard"))
 
     content = """
-    <section class="hero">
+    <section class="hero" style="padding-top:34px;">
       <div class="container">
-        <div class="panel">
+        <div class="panel" style="padding:26px;">
           <div class="hero-badge">● Nuevo: cuenta digital para Cuba</div>
-          <h1 class="hero-title">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
-          <p class="hero-subtitle">
+          <h1 class="hero-title" style="margin-bottom:14px;">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
+          <p class="hero-subtitle" style="margin-bottom:22px;">
             Guarda saldo en USD, USDT y CUP. Deposita, retira, convierte y transfiere dinero
             desde una sola cuenta digital pensada para Cuba.
           </p>
