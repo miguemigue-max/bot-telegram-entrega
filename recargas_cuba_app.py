@@ -2760,3 +2760,144 @@ def convert_page():
         usdt_sell=usdt_sell
     )
 
+@app.route("/admin")
+@login_required
+def admin_dashboard():
+
+    user = current_user()
+
+    if not user["is_admin"]:
+        return redirect(url_for("wallet_page"))
+
+    conn = get_db()
+
+    users = q(conn, "SELECT * FROM users ORDER BY id DESC LIMIT 50").fetchall()
+
+    deposits = q(conn, """
+        SELECT d.*, u.email
+        FROM deposits d
+        JOIN users u ON u.id = d.user_id
+        ORDER BY d.id DESC
+        LIMIT 50
+    """).fetchall()
+
+    withdrawals = q(conn, """
+        SELECT w.*, u.email
+        FROM withdrawals w
+        JOIN users u ON u.id = w.user_id
+        ORDER BY w.id DESC
+        LIMIT 50
+    """).fetchall()
+
+    conn.close()
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+
+        <div class="top-row">
+          <div>
+            <h2>Panel de administración</h2>
+            <p class="subtitle">Control total del sistema.</p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+
+          <div class="card panel">
+            <h3>Usuarios recientes</h3>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>@tag</th>
+                </tr>
+              </thead>
+
+              <tbody>
+              {% for u in users %}
+                <tr>
+                  <td>{{u['id']}}</td>
+                  <td>{{u['first_name']}} {{u['last_name']}}</td>
+                  <td>{{u['email']}}</td>
+                  <td>{{u['profile_tag']}}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+
+            </table>
+          </div>
+
+          <div class="card panel">
+            <h3>Depósitos</h3>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Email</th>
+                  <th>Moneda</th>
+                  <th>Monto</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+
+              <tbody>
+              {% for d in deposits %}
+                <tr>
+                  <td>{{d['id']}}</td>
+                  <td>{{d['email']}}</td>
+                  <td>{{d['currency']}}</td>
+                  <td>{{d['amount']}}</td>
+                  <td>{{d['status']}}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+
+            </table>
+          </div>
+
+        </div>
+
+        <div class="card panel" style="margin-top:20px;">
+
+          <h3>Retiros</h3>
+
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Moneda</th>
+                <th>Monto</th>
+                <th>Método</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+
+            <tbody>
+            {% for w in withdrawals %}
+              <tr>
+                <td>{{w['id']}}</td>
+                <td>{{w['email']}}</td>
+                <td>{{w['currency']}}</td>
+                <td>{{w['amount']}}</td>
+                <td>{{w['method']}}</td>
+                <td>{{w['status']}}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(content, title="Admin", user=user)
+
