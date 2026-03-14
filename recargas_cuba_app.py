@@ -2511,3 +2511,123 @@ def activate_referral_if_needed(user_id, deposit_amount_usd):
 
     log_action(inviter_id, "referral_bonus", f"Bonus {reward} USDT activado")
 
+@app.route("/withdraw", methods=["GET", "POST"])
+@login_required
+def withdraw_page():
+
+    user = current_user()
+    wallet = get_wallet(user["id"])
+    settings = get_settings()
+
+    usd_sell = parse_float(settings.get("usd_sell_cup", "490"))
+    usdt_sell = parse_float(settings.get("usdt_sell_cup", "575"))
+
+    if request.method == "POST":
+
+        currency = request.form.get("currency")
+        method = request.form.get("method")
+        amount = parse_float(request.form.get("amount"), 0)
+        destination = request.form.get("destination", "").strip()
+
+        if amount <= 0:
+            flash("Monto inválido.", "error")
+            return redirect(url_for("withdraw_page"))
+
+        if not can_debit_wallet(user["id"], currency, amount):
+            flash("Saldo insuficiente.", "error")
+            return redirect(url_for("withdraw_page"))
+
+        conn = get_db()
+
+        q(conn, """
+            INSERT INTO withdrawals (
+                user_id,
+                currency,
+                amount,
+                method,
+                destination,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'Pendiente', ?)
+        """, (
+            user["id"],
+            currency,
+            amount,
+            method,
+            destination,
+            now_str()
+        ))
+
+        conn.commit()
+        conn.close()
+
+        adjust_wallet(user["id"], currency, amount, "Solicitud de retiro", "debit", "withdraw_request")
+
+        flash("Solicitud de retiro enviada.", "success")
+        return redirect(url_for("wallet_page"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:620px;">
+
+        <div class="card panel">
+          <h2>Retirar fondos</h2>
+
+          <form method="post">
+
+            <div>
+              <label>Moneda</label>
+              <select name="currency">
+                <option>USD</option>
+                <option>USDT</option>
+                <option>CUP</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Método de retiro</label>
+              <select name="method">
+                <option>Cripto</option>
+                <option>Paypal</option>
+                <option>Tarjeta CUP</option>
+                <option>PIX Brasil</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Monto</label>
+              <input name="amount" placeholder="0.00" required>
+            </div>
+
+            <div>
+              <label>Destino</label>
+              <input name="destination" placeholder="Wallet / Email / Tarjeta / PIX" required>
+            </div>
+
+            <button class="btn btn-primary">Solicitar retiro</button>
+
+          </form>
+
+          <div class="promo-box">
+            <strong>Tasas actuales</strong>
+            <ul>
+              <li>USD retiro → {{ usd_sell }} CUP</li>
+              <li>USDT retiro → {{ usdt_sell }} CUP</li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Retirar",
+        user=user,
+        usd_sell=usd_sell,
+        usdt_sell=usdt_sell
+    )
+
