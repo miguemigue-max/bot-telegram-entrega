@@ -441,3 +441,685 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+BASE_HTML = """
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root{
+      --bg:#070b18;
+      --bg-2:#0b1020;
+      --card:#11182c;
+      --card-2:#171f37;
+      --text:#f8f8fb;
+      --muted:#b7b9c9;
+      --accent:#7c5cff;
+      --accent-2:#9b6dff;
+      --line:rgba(255,255,255,0.06);
+      --ok:#34c759;
+      --danger:#ff5c7a;
+      --shadow:0 20px 40px rgba(0,0,0,0.28);
+      --radius-xl:28px;
+      --radius-lg:22px;
+      --radius-md:18px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(124,92,255,0.18), transparent 24%),
+        radial-gradient(circle at 80% 0%, rgba(0,155,255,0.16), transparent 28%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+      min-height:100vh;
+    }
+
+    a{color:inherit;text-decoration:none}
+    .container{width:min(1100px, 92%);margin:0 auto}
+
+    .topbar{
+      position:sticky;top:0;z-index:30;
+      backdrop-filter:blur(18px);
+      background:rgba(7,11,24,0.72);
+      border-bottom:1px solid var(--line);
+    }
+
+    .topbar-inner{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:14px;padding:16px 0;
+    }
+
+    .brand{
+      display:flex;align-items:center;gap:12px;font-weight:800;font-size:1.02rem;
+    }
+
+    .brand-mark{
+      width:34px;height:34px;border-radius:14px;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      box-shadow:0 14px 28px rgba(124,92,255,0.25);
+      font-size:1rem;
+    }
+
+    .nav-actions{
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    }
+
+    .btn{
+      border:0;
+      border-radius:18px;
+      padding:12px 18px;
+      font-weight:800;
+      cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center;
+      transition:transform .18s ease, opacity .18s ease;
+    }
+
+    .btn:hover{transform:translateY(-2px)}
+    .btn-primary{
+      color:white;
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      box-shadow:0 16px 30px rgba(124,92,255,0.24);
+    }
+    .btn-secondary{
+      color:white;
+      background:rgba(255,255,255,0.05);
+      border:1px solid rgba(255,255,255,0.08);
+    }
+    .btn-danger{
+      color:#ffd7df;
+      background:rgba(255,92,122,0.10);
+      border:1px solid rgba(255,92,122,0.12);
+    }
+
+    .icon-btn{
+      width:46px;height:46px;border-radius:16px;
+      display:inline-flex;align-items:center;justify-content:center;
+      color:white;
+      background:rgba(255,255,255,0.05);
+      border:1px solid rgba(255,255,255,0.08);
+      cursor:pointer;
+    }
+
+    .menu-wrap{position:relative}
+    .menu-dropdown{
+      position:absolute;right:0;top:calc(100% + 10px);
+      width:230px;
+      border-radius:20px;
+      background:rgba(17,24,44,0.98);
+      border:1px solid rgba(255,255,255,0.08);
+      box-shadow:var(--shadow);
+      padding:10px;
+      display:none;
+      z-index:60;
+    }
+    .menu-wrap:hover .menu-dropdown,
+    .menu-wrap:focus-within .menu-dropdown{
+      display:block;
+    }
+
+    .menu-item{
+      display:block;
+      padding:12px 14px;
+      border-radius:14px;
+      font-weight:700;
+      color:var(--text);
+    }
+    .menu-item:hover{background:rgba(255,255,255,0.06)}
+
+    .flash-wrap{display:grid;gap:10px;margin:18px 0}
+    .flash{
+      padding:14px 16px;border-radius:16px;font-weight:800;
+      border:1px solid rgba(255,255,255,0.08);
+    }
+    .flash-success{background:rgba(52,199,89,0.14);color:#aaf0bf}
+    .flash-error{background:rgba(255,92,122,0.12);color:#ffd1da}
+    .flash-info{background:rgba(124,92,255,0.16);color:#e3dcff}
+
+    .hero{
+      padding:40px 0 32px;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .hero-grid{
+      display:grid;
+      grid-template-columns:1.04fr 0.96fr;
+      gap:24px;
+      align-items:center;
+    }
+
+    .hero-badge{
+      display:inline-flex;align-items:center;gap:10px;
+      padding:10px 16px;border-radius:999px;
+      background:rgba(124,92,255,0.10);
+      border:1px solid rgba(124,92,255,0.18);
+      color:#cdbfff;font-weight:800;font-size:.95rem;
+      margin-bottom:18px;
+    }
+
+    .hero-title{
+      margin:0 0 18px;
+      font-size:clamp(2.7rem, 7vw, 5.2rem);
+      line-height:0.96;
+      letter-spacing:-0.05em;
+      font-weight:900;
+    }
+
+    .hero-subtitle{
+      margin:0 0 24px;
+      color:var(--muted);
+      font-size:1.14rem;
+      line-height:1.75;
+      max-width:60ch;
+    }
+
+    .hero-actions{
+      display:flex;gap:14px;flex-wrap:wrap;
+    }
+
+    .hero-card,
+    .panel,
+    .auth-card,
+    .step-card,
+    .wallet-box,
+    .stat-card,
+    .tx-card{
+      background:linear-gradient(180deg, rgba(23,31,55,0.96), rgba(17,24,44,0.98));
+      border:1px solid rgba(255,255,255,0.07);
+      box-shadow:var(--shadow);
+      border-radius:var(--radius-xl);
+    }
+
+    .hero-card{padding:24px}
+
+    .hero-figure{
+      min-height:520px;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .float-chip{
+      position:absolute;
+      border-radius:999px;
+      padding:10px 16px;
+      background:rgba(124,92,255,0.10);
+      border:1px solid rgba(124,92,255,0.15);
+      color:#cdbfff;font-weight:800;
+      animation:floaty 4s ease-in-out infinite;
+    }
+
+    .coin{
+      position:absolute;
+      width:88px;height:88px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:2rem;
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.08);
+      animation:floaty 5s ease-in-out infinite;
+    }
+
+    .hero-figure-title{
+      position:absolute;left:34px;right:34px;top:120px;
+      font-size:clamp(2.6rem, 8vw, 5.1rem);
+      line-height:0.98;
+      letter-spacing:-0.05em;
+      font-weight:900;
+    }
+
+    .gradient-word{
+      background:linear-gradient(90deg,#ffcb45,#ff8d2f,#ff5b57);
+      -webkit-background-clip:text;
+      background-clip:text;
+      color:transparent;
+    }
+
+    .under-line{
+      display:block;
+      width:220px;height:10px;border-radius:999px;
+      margin-top:14px;
+      background:linear-gradient(90deg,#ffcb45,#ff8d2f,#ff5b57);
+    }
+
+    .hero-desc{
+      position:absolute;left:34px;right:34px;bottom:42px;
+      color:var(--muted);font-size:1.05rem;line-height:1.8;
+    }
+
+    .page-wrap{padding:34px 0 54px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .panel{padding:24px}
+    .panel h2,.panel h3{margin:0 0 10px}
+    .subtitle{color:var(--muted);line-height:1.7}
+
+    .wallet-hero{
+      padding:18px 0 10px;
+    }
+
+    .wallet-top{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:14px;margin-bottom:16px;
+    }
+
+    .wallet-balance{
+      font-size:4rem;font-weight:900;line-height:1;letter-spacing:-0.04em;
+    }
+
+    .quick-actions{
+      display:flex;gap:12px;flex-wrap:wrap;
+    }
+
+    .quick-card{
+      flex:1;
+      min-width:120px;
+      padding:18px;
+      border-radius:22px;
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.07);
+      text-align:center;
+      font-weight:800;
+    }
+
+    .wallet-grid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:16px;
+      margin-top:20px;
+    }
+
+    .wallet-box{
+      padding:22px;
+    }
+
+    .wallet-label{
+      color:var(--muted);
+      font-size:1rem;
+      margin-bottom:14px;
+    }
+
+    .wallet-amount{
+      font-size:2rem;
+      font-weight:900;
+      line-height:1;
+    }
+
+    .section-title{
+      display:flex;align-items:end;justify-content:space-between;
+      gap:14px;margin:28px 0 16px;
+    }
+
+    .tx-list{
+      display:grid;gap:14px;
+    }
+
+    .tx-card{
+      padding:18px 20px;
+      display:flex;align-items:center;justify-content:space-between;gap:16px;
+    }
+
+    .tx-left{display:flex;gap:14px;align-items:center}
+    .tx-icon{
+      width:54px;height:54px;border-radius:18px;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(124,92,255,0.12);
+      font-size:1.3rem;
+    }
+
+    .tx-title{font-size:1.15rem;font-weight:900}
+    .tx-sub{color:var(--muted);margin-top:4px}
+    .tx-amount{font-size:1.4rem;font-weight:900}
+    .tx-plus{color:#9af0af}
+    .tx-minus{color:#ffd2d9}
+
+    .auth-shell,.onboarding-shell{
+      min-height:calc(100vh - 85px);
+      display:flex;align-items:center;justify-content:center;
+      padding:28px 0 44px;
+    }
+
+    .auth-card,.step-card{
+      width:min(560px,94vw);
+      padding:28px;
+    }
+
+    .step-progress{
+      width:100%;height:10px;border-radius:999px;
+      background:rgba(255,255,255,0.08);
+      overflow:hidden;margin-bottom:24px;
+    }
+
+    .step-progress-fill{
+      height:100%;
+      background:linear-gradient(90deg,var(--accent),var(--accent-2));
+      border-radius:999px;
+    }
+
+    .step-question{
+      font-size:clamp(2rem,5vw,3rem);
+      line-height:1.03;
+      letter-spacing:-0.04em;
+      font-weight:900;
+      margin:0 0 14px;
+    }
+
+    .step-helper{
+      color:var(--muted);
+      line-height:1.7;
+      margin-bottom:20px;
+      font-size:1.05rem;
+    }
+
+    form{display:grid;gap:14px}
+    label{font-size:.92rem;font-weight:800;margin-bottom:6px;display:block}
+    input,select,textarea{
+      width:100%;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.08);
+      background:rgba(255,255,255,0.04);
+      color:white;
+      padding:15px 16px;
+      font-size:1rem;
+      outline:none;
+    }
+    input::placeholder,textarea::placeholder{color:#9da3b7}
+    input:focus,select:focus,textarea:focus{
+      border-color:rgba(124,92,255,0.45);
+      box-shadow:0 0 0 4px rgba(124,92,255,0.12);
+    }
+    textarea{min-height:110px;resize:vertical}
+
+    table{width:100%;border-collapse:collapse}
+    th,td{
+      padding:14px;
+      text-align:left;
+      border-bottom:1px solid rgba(255,255,255,0.06);
+      vertical-align:top;
+    }
+    th{color:#d8d9e6;font-size:.92rem}
+    td{color:var(--muted)}
+    .empty{padding:22px;color:var(--muted);text-align:center}
+
+    .status{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:7px 12px;border-radius:999px;font-size:.84rem;font-weight:900;
+      border:1px solid rgba(255,255,255,0.07);
+    }
+    .status-pendiente{background:rgba(255,178,0,0.12);color:#ffd788}
+    .status-activado,.status-completado,.status-aprobado{background:rgba(52,199,89,0.12);color:#abefbe}
+    .status-rechazado,.status-cancelado{background:rgba(255,92,122,0.12);color:#ffd0d8}
+
+    .footer{
+      padding:28px 0 44px;
+      color:var(--muted);
+      border-top:1px solid rgba(255,255,255,0.05);
+      margin-top:10px;
+    }
+
+    @keyframes floaty{
+      0%,100%{transform:translateY(0)}
+      50%{transform:translateY(-8px)}
+    }
+
+    @media (max-width:980px){
+      .hero-grid,.grid-2,.wallet-grid{grid-template-columns:1fr}
+      .hero-figure{min-height:460px}
+    }
+
+    @media (max-width:740px){
+      .container{width:min(94%,100%)}
+      .wallet-balance{font-size:3.2rem}
+      .topbar-inner{padding:14px 0}
+      table,thead,tbody,th,td,tr{display:block}
+      thead{display:none}
+      tr{border-bottom:1px solid rgba(255,255,255,0.06);padding:10px 0}
+      td{border-bottom:none;padding:8px 14px}
+      td::before{
+        content:attr(data-label);
+        display:block;
+        color:#f1f1f8;
+        font-size:.82rem;
+        font-weight:900;
+        margin-bottom:4px;
+      }
+    }
+
+    @media (max-width:640px){
+      .hero-actions .btn,
+      .quick-actions .quick-card{width:100%}
+      .wallet-top{flex-direction:column;align-items:flex-start}
+      .hero-figure-title{top:110px}
+      .hero-desc{bottom:30px}
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <a href="{{ url_for('home') }}" style="display:flex;align-items:center;gap:12px;">
+          <span class="brand-mark">◉</span>
+          <span>Banco Cuba</span>
+        </a>
+      </div>
+
+      <div class="nav-actions">
+        {% if user %}
+          <div class="menu-wrap">
+            <button class="icon-btn" type="button">⋯</button>
+            <div class="menu-dropdown">
+              {% if user['is_admin'] %}
+                <a class="menu-item" href="{{ url_for('admin_dashboard') }}">Panel admin</a>
+                <a class="menu-item" href="{{ url_for('admin_settings') }}">Configuración</a>
+              {% else %}
+                <a class="menu-item" href="{{ url_for('wallet_page') }}">Inicio</a>
+                <a class="menu-item" href="{{ url_for('profile') }}">Mi perfil</a>
+                <a class="menu-item" href="{{ url_for('transfer_money') }}">Enviar dinero</a>
+                <a class="menu-item" href="{{ url_for('deposit_page') }}">Depositar</a>
+                <a class="menu-item" href="{{ url_for('withdraw_page') }}">Retirar</a>
+                <a class="menu-item" href="{{ url_for('convert_page') }}">Convertir</a>
+                <a class="menu-item" href="{{ url_for('referrals_page') }}">Referidos</a>
+              {% endif %}
+              <a class="menu-item" href="{{ url_for('forgot_password') }}">Seguridad</a>
+              <a class="menu-item" href="{{ url_for('logout') }}">Cerrar sesión</a>
+            </div>
+          </div>
+        {% else %}
+          <div class="menu-wrap">
+            <button class="icon-btn" type="button">⋯</button>
+            <div class="menu-dropdown">
+              <a class="menu-item" href="{{ url_for('login') }}">Entrar</a>
+              <a class="menu-item" href="{{ url_for('register_step', step=1) }}">Crear cuenta</a>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  {{ content|safe }}
+</body>
+</html>
+"""
+
+
+def render_page(content, title="Banco Cuba", user=None, **context):
+    rendered = render_template_string(content, user=user, **context)
+    return render_template_string(
+        BASE_HTML,
+        content=rendered,
+        title=title,
+        user=user
+    )
+
+
+@app.route("/")
+def home():
+    user = current_user()
+
+    if user and not user["is_admin"]:
+        wallet = get_wallet(user["id"])
+
+        conn = get_db()
+        txs = q(conn, """
+            SELECT * FROM wallet_transactions
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 6
+        """, (user["id"],)).fetchall()
+        conn.close()
+
+        content = """
+        <section class="page-wrap wallet-hero">
+          <div class="container">
+            <div class="wallet-top">
+              <div>
+                <div class="subtitle" style="margin:0 0 8px;">Saldo total</div>
+                <div class="wallet-balance">${{ "%.2f"|format(total_balance) }}</div>
+              </div>
+              <div class="quick-actions">
+                <a class="quick-card" href="{{ url_for('transfer_money') }}">Enviar</a>
+                <a class="quick-card" href="{{ url_for('deposit_page') }}">Depositar</a>
+                <a class="quick-card" href="{{ url_for('withdraw_page') }}">Retirar</a>
+              </div>
+            </div>
+
+            <div class="wallet-grid">
+              <div class="wallet-box">
+                <div class="wallet-label">USD</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["usd_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">USDT</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["usdt_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">CUP</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["cup_balance"]) }}</div>
+              </div>
+              <div class="wallet-box">
+                <div class="wallet-label">Bonus USDT</div>
+                <div class="wallet-amount">{{ "%.2f"|format(wallet["bonus_usdt_balance"]) }}</div>
+              </div>
+            </div>
+
+            <div class="section-title">
+              <div>
+                <h2 style="margin:0 0 6px;">Últimas transacciones</h2>
+                <div class="subtitle">Actividad reciente de tu cuenta.</div>
+              </div>
+              <a href="{{ url_for('wallet_page') }}" class="subtitle" style="font-weight:800;">Ver todas</a>
+            </div>
+
+            <div class="tx-list">
+              {% if txs %}
+                {% for tx in txs %}
+                <div class="tx-card">
+                  <div class="tx-left">
+                    <div class="tx-icon">↔</div>
+                    <div>
+                      <div class="tx-title">{{ tx["description"] }}</div>
+                      <div class="tx-sub">{{ tx["currency"] }} · {{ tx["created_at"] }}</div>
+                    </div>
+                  </div>
+                  <div class="tx-amount {% if tx['direction']=='credit' %}tx-plus{% else %}tx-minus{% endif %}">
+                    {% if tx['direction']=='credit' %}+{% else %}-{% endif %}{{ "%.2f"|format(tx["amount"]) }}
+                  </div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="tx-card">
+                  <div class="tx-left">
+                    <div class="tx-icon">◎</div>
+                    <div>
+                      <div class="tx-title">Sin movimientos todavía</div>
+                      <div class="tx-sub">Tu actividad aparecerá aquí.</div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </section>
+        """
+        return render_page(
+            content,
+            title="Inicio",
+            user=user,
+            wallet=wallet,
+            txs=txs,
+            total_balance=total_usd_equivalent(wallet)
+        )
+
+    if user and user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    content = """
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="hero-badge">● Nuevo: cuenta digital para Cuba</div>
+          <h1 class="hero-title">Tu cuenta digital<br>en <span class="gradient-word">dólares</span></h1>
+          <p class="hero-subtitle">
+            Guarda saldo en USD, USDT y CUP. Deposita, retira, convierte y transfiere dinero
+            desde una sola cuenta digital pensada para Cuba.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="{{ url_for('register_step', step=1) }}">Crear cuenta gratis →</a>
+            <a class="btn btn-secondary" href="{{ url_for('login') }}">Entrar →</a>
+          </div>
+        </div>
+
+        <div class="hero-card hero-figure">
+          <div class="float-chip" style="left:24px;top:24px;">Nuevo: cuenta digital y P2P</div>
+          <div class="coin" style="left:18px;top:110px;">₿</div>
+          <div class="coin" style="right:22px;top:160px;">◇</div>
+          <div class="coin" style="right:36px;bottom:54px;">₮</div>
+
+          <div class="hero-figure-title">
+            Tu cuenta<br>digital<br>en <span class="gradient-word">dólares</span>
+            <span class="under-line"></span>
+          </div>
+
+          <div class="hero-desc">
+            Compra, vende e intercambia USD, USDT y CUP.
+            Transfiere saldo entre usuarios y maneja tu dinero desde un solo lugar.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      <div class="container">Banco Cuba · Cuenta digital y pagos</div>
+    </div>
+    """
+    return render_page(content, title="Banco Cuba", user=None)
+
+
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_file(UPLOAD_DIR / filename)
+
+
+@app.route("/wallet")
+@login_required
+def wallet_page():
+    return redirect(url_for("home"))
+
