@@ -1900,3 +1900,361 @@ def profile():
         masked_carnet=card_mask(user["carnet"]),
     )
 
+@app.route("/wallet")
+@login_required
+def wallet_page():
+    user = current_user()
+
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    wallet = get_wallet(user["id"])
+    settings = get_settings()
+
+    conn = get_db()
+
+    txs = q(conn, """
+        SELECT * FROM wallet_transactions
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 25
+    """, (user["id"],)).fetchall()
+
+    referrals = q(conn, """
+        SELECT
+            r.*,
+            u.first_name,
+            u.last_name,
+            u.email
+        FROM referrals r
+        JOIN users u ON r.invited_user_id = u.id
+        WHERE r.inviter_user_id = ?
+        ORDER BY r.id DESC
+        LIMIT 20
+    """, (user["id"],)).fetchall()
+
+    conn.close()
+
+    referral_reward = parse_float(settings.get("referral_reward_usdt", "0.25"), 0.25)
+    referral_required_deposit = parse_float(settings.get("referral_required_deposit_usd", "5"), 5)
+    bonus_withdraw_min = parse_float(settings.get("bonus_withdraw_min_usdt", "1"), 1)
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+
+        <div class="card panel" style="margin-bottom:22px; background:linear-gradient(135deg, #8A05BE, #B517FF); color:white;">
+          <div class="top-row" style="margin-bottom:0;">
+            <div>
+              <div style="font-size:.95rem; opacity:.88;">Saldo total disponible</div>
+              <div style="font-size:2.4rem; font-weight:800; line-height:1.05; margin-top:6px;">
+                {{ total_usd_text }}
+              </div>
+            </div>
+            <div class="avatar" style="width:60px; height:60px; font-size:1.1rem; box-shadow:none; border:1px solid rgba(255,255,255,.16);">
+              {% if user['profile_photo'] %}
+                <img src="{{ profile_photo_url }}" alt="Foto">
+              {% else %}
+                {{ user['first_name'][0] }}{{ user['last_name'][0] }}
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;">
+            <a class="btn" href="{{ url_for('deposit_page') }}" style="background:white; color:#8A05BE;">Depositar</a>
+            <a class="btn" href="{{ url_for('withdraw_page') }}" style="background:rgba(255,255,255,.14); color:white;">Retirar</a>
+            <a class="btn" href="{{ url_for('transfer_money') }}" style="background:rgba(255,255,255,.14); color:white;">Enviar</a>
+            <a class="btn" href="{{ url_for('convert_page') }}" style="background:rgba(255,255,255,.14); color:white;">Convertir</a>
+          </div>
+        </div>
+
+        <div class="wallet-grid" style="margin-bottom:22px;">
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo USD</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['usd_balance']) }}</div>
+          </div>
+
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo USDT</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['usdt_balance']) }}</div>
+          </div>
+
+          <div class="card wallet-card">
+            <div class="wallet-label">Saldo CUP</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['cup_balance']) }}</div>
+          </div>
+
+          <div class="card wallet-card">
+            <div class="wallet-label">Bonus USDT</div>
+            <div class="wallet-amount">{{ '%.2f'|format(wallet['bonus_usdt_balance']) }}</div>
+          </div>
+        </div>
+
+        <div class="services-title" style="text-align:left; margin-bottom:14px;">
+          <h2 style="margin-bottom:6px;">Accesos rápidos</h2>
+          <p>Haz tus operaciones desde un solo lugar.</p>
+        </div>
+
+        <div class="services-scroll" style="margin-bottom:24px;">
+          <a class="service-item" href="{{ url_for('deposit_page') }}">
+            <div class="icon">➕</div>
+            <span>Depositar</span>
+          </a>
+
+          <a class="service-item" href="{{ url_for('withdraw_page') }}">
+            <div class="icon">⬇️</div>
+            <span>Retirar</span>
+          </a>
+
+          <a class="service-item" href="{{ url_for('transfer_money') }}">
+            <div class="icon">💸</div>
+            <span>Enviar</span>
+          </a>
+
+          <a class="service-item" href="{{ url_for('convert_page') }}">
+            <div class="icon">🔁</div>
+            <span>Convertir</span>
+          </a>
+
+          <a class="service-item" href="{{ url_for('new_order') }}">
+            <div class="icon">📱</div>
+            <span>Servicios</span>
+          </a>
+        </div>
+
+        <div class="grid-2">
+          <div class="card panel">
+            <div class="top-row" style="margin-bottom:10px;">
+              <div>
+                <h3>Actividad reciente</h3>
+                <p class="subtitle" style="font-size:1rem; margin:0;">Tus últimos movimientos.</p>
+              </div>
+            </div>
+
+            {% if txs %}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Moneda</th>
+                    <th>Monto</th>
+                    <th>Tipo</th>
+                    <th>Descripción</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for tx in txs %}
+                  <tr>
+                    <td data-label="Moneda">{{ tx['currency'] }}</td>
+                    <td data-label="Monto">
+                      {% if tx['direction'] == 'credit' %}+{% else %}-{% endif %}
+                      {{ tx['amount'] }}
+                    </td>
+                    <td data-label="Tipo">{{ tx['tx_type'] }}</td>
+                    <td data-label="Descripción">{{ tx['description'] }}</td>
+                    <td data-label="Fecha">{{ tx['created_at'] }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div class="empty">Todavía no hay movimientos en tu cuenta.</div>
+            {% endif %}
+          </div>
+
+          <div class="card panel">
+            <div class="top-row" style="margin-bottom:10px;">
+              <div>
+                <h3>Referidos</h3>
+                <p class="subtitle" style="font-size:1rem; margin:0;">
+                  Gana {{ '%.2f'|format(referral_reward) }} USDT cuando tu referido haga un depósito aprobado de al menos {{ '%.2f'|format(referral_required_deposit) }} USD.
+                </p>
+              </div>
+            </div>
+
+            <div class="promo-box" style="margin-top:0; margin-bottom:14px;">
+              <strong>Tu código:</strong> {{ user['referral_code'] }}
+              <ul>
+                <li>El bono no se paga por registro.</li>
+                <li>Se activa solo cuando el referido deposita el mínimo requerido.</li>
+                <li>Puedes retirar bonus cuando tengas al menos {{ '%.2f'|format(bonus_withdraw_min) }} USDT en bonus.</li>
+              </ul>
+            </div>
+
+            {% if referrals %}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Correo</th>
+                    <th>Bono</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for ref in referrals %}
+                  <tr>
+                    <td data-label="Usuario">{{ ref['first_name'] }} {{ ref['last_name'] }}</td>
+                    <td data-label="Correo">{{ ref['email'] }}</td>
+                    <td data-label="Bono">{{ ref['reward_usdt'] }} USDT</td>
+                    <td data-label="Estado">
+                      <span class="status status-{{ ref['status'] }}">
+                        {{ ref['status'] }}
+                      </span>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div class="empty">Todavía no tienes referidos registrados.</div>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+    """
+
+    total_usd_equivalent = float(wallet["usd_balance"]) + float(wallet["usdt_balance"])
+    profile_photo_url = url_for("uploaded_file", filename=os.path.basename(user["profile_photo"])) if user["profile_photo"] else None
+
+    return render_page(
+        content,
+        title="Mi billetera",
+        user=user,
+        wallet=wallet,
+        txs=txs,
+        referrals=referrals,
+        referral_reward=referral_reward,
+        referral_required_deposit=referral_required_deposit,
+        bonus_withdraw_min=bonus_withdraw_min,
+        total_usd_text=f"${total_usd_equivalent:.2f}",
+        profile_photo_url=profile_photo_url,
+    )
+
+
+@app.route("/referrals")
+@login_required
+def referrals_page():
+    user = current_user()
+
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    settings = get_settings()
+    referral_reward = parse_float(settings.get("referral_reward_usdt", "0.25"), 0.25)
+    referral_required_deposit = parse_float(settings.get("referral_required_deposit_usd", "5"), 5)
+    bonus_withdraw_min = parse_float(settings.get("bonus_withdraw_min_usdt", "1"), 1)
+
+    conn = get_db()
+    referrals = q(conn, """
+        SELECT
+            r.*,
+            u.first_name,
+            u.last_name,
+            u.email,
+            u.profile_tag
+        FROM referrals r
+        JOIN users u ON r.invited_user_id = u.id
+        WHERE r.inviter_user_id = ?
+        ORDER BY r.id DESC
+    """, (user["id"],)).fetchall()
+    conn.close()
+
+    wallet = get_wallet(user["id"])
+
+    content = """
+    <div class="page-wrap">
+      <div class="container" style="max-width:980px;">
+        <div class="top-row">
+          <div>
+            <h2>Programa de referidos</h2>
+            <p class="subtitle" style="margin-bottom:0;">
+              Invita usuarios reales y gana bonus en USDT cuando completen el requisito.
+            </p>
+          </div>
+          <a class="btn btn-secondary" href="{{ url_for('wallet_page') }}">Volver a billetera</a>
+        </div>
+
+        <div class="grid-2">
+          <div class="card panel">
+            <h3>Tu código</h3>
+            <div class="promo-box" style="margin-top:0;">
+              <div style="font-size:1.35rem; font-weight:800; color:#8A05BE;">{{ user['referral_code'] }}</div>
+              <ul>
+                <li>Bono por referido válido: {{ '%.2f'|format(referral_reward) }} USDT</li>
+                <li>Depósito mínimo del referido: {{ '%.2f'|format(referral_required_deposit) }} USD</li>
+                <li>Mínimo para retirar bonus: {{ '%.2f'|format(bonus_withdraw_min) }} USDT</li>
+              </ul>
+            </div>
+
+            <div class="wallet-grid" style="grid-template-columns:1fr; margin-top:14px;">
+              <div class="card wallet-card">
+                <div class="wallet-label">Bonus acumulado</div>
+                <div class="wallet-amount">{{ '%.2f'|format(wallet['bonus_usdt_balance']) }} USDT</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card panel">
+            <h3>Reglas del sistema</h3>
+            <div class="promo-box" style="margin-top:0;">
+              <ul>
+                <li>El bonus no se paga por registro.</li>
+                <li>Se activa cuando el referido hace un depósito aprobado.</li>
+                <li>El depósito debe ser de al menos {{ '%.2f'|format(referral_required_deposit) }} USD.</li>
+                <li>Los bonus se guardan por separado en tu saldo de bonus.</li>
+                <li>Solo puedes retirar bonus cuando llegues a {{ '%.2f'|format(bonus_withdraw_min) }} USDT o más.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel" style="margin-top:22px;">
+          <h3>Mis referidos</h3>
+
+          {% if referrals %}
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>@tag</th>
+                  <th>Correo</th>
+                  <th>Bono</th>
+                  <th>Estado</th>
+                  <th>Creado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ref in referrals %}
+                <tr>
+                  <td data-label="Nombre">{{ ref['first_name'] }} {{ ref['last_name'] }}</td>
+                  <td data-label="@tag">{{ ref['profile_tag'] }}</td>
+                  <td data-label="Correo">{{ ref['email'] }}</td>
+                  <td data-label="Bono">{{ ref['reward_usdt'] }} USDT</td>
+                  <td data-label="Estado"><span class="status status-{{ ref['status'] }}">{{ ref['status'] }}</span></td>
+                  <td data-label="Creado">{{ ref['created_at'] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="empty">Todavía no tienes referidos creados.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Referidos",
+        user=user,
+        referrals=referrals,
+        wallet=wallet,
+        referral_reward=referral_reward,
+        referral_required_deposit=referral_required_deposit,
+        bonus_withdraw_min=bonus_withdraw_min,
+    )
+
