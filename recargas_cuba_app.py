@@ -930,7 +930,7 @@ BASE_HTML = """
   }
 }
 
-.nubank-home{
+.nubank-homer{
   background:#f4ecfb;
   min-height:100vh;
   padding-bottom:40px;
@@ -981,7 +981,8 @@ BASE_HTML = """
 }
 
 .nubank-main{
-  margin-top:-12px;
+  margin-top:-22px;
+  padding-bottom:40px;
 }
 
 .nubank-section-card{
@@ -989,7 +990,8 @@ BASE_HTML = """
   border-radius:24px;
   padding:22px;
   box-shadow:0 12px 30px rgba(138,5,190,0.10);
-  margin-bottom:16px;
+  margin-bottom:18px;
+  display:block;
 }
 
 .nubank-row{
@@ -997,6 +999,7 @@ BASE_HTML = """
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
+  margin-bottom:18px;
 }
 
 .nubank-section-title{
@@ -1021,20 +1024,25 @@ BASE_HTML = """
 
 .nubank-actions-row{
   display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:12px;
-  margin-top:22px;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:14px;
+  align-items:start;
 }
 
 .nubank-action-btn{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
   text-align:center;
   color:#191919;
+  min-width:0;
 }
 
 .nubank-action-icon{
   width:58px;
   height:58px;
-  margin:0 auto 10px;
+  margin:0 0 10px 0;
   border-radius:50%;
   background:#f2eef7;
   display:flex;
@@ -1042,14 +1050,17 @@ BASE_HTML = """
   justify-content:center;
   font-size:1.2rem;
   font-weight:900;
+  flex-shrink:0;
 }
 
 .nubank-action-text{
   font-size:.92rem;
   font-weight:700;
+  color:#191919;
+  line-height:1.2;
 }
 
-.nubank-strip{
+nubank-strip{
   background:#ffffff;
   border-radius:18px;
   padding:16px 18px;
@@ -1082,6 +1093,7 @@ BASE_HTML = """
   padding:22px;
   box-shadow:0 10px 24px rgba(138,5,190,0.08);
   margin-bottom:14px;
+  display:block;
 }
 
 .nubank-wallet-title{
@@ -1133,14 +1145,23 @@ BASE_HTML = """
 .tx-minus{color:#d11a4a}
 
 @media (max-width:640px){
+  .nubank-main{
+    margin-top:-18px;
+  }
+
   .nubank-actions-row{
-    grid-template-columns:repeat(4,1fr);
+    grid-template-columns:repeat(4, minmax(0,1fr));
     gap:10px;
   }
 
   .nubank-action-icon{
     width:54px;
     height:54px;
+    font-size:1.1rem;
+  }
+
+  .nubank-action-text{
+    font-size:.82rem;
   }
 
   .nubank-balance{
