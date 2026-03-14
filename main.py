@@ -1508,4 +1508,316 @@ def transfer_money():
     </div>
     """
     return render_page(content, title="Enviar dinero", user=user, wallet=wallet)
-    
+
+@app.route("/new-order", methods=["GET","POST"])
+@login_required
+def new_order():
+    user = current_user()
+    if user["is_admin"]:
+        return redirect(url_for("admin_dashboard"))
+
+    service = request.args.get("service","Recargas")
+    promo = get_active_promo()
+    settings = get_settings()
+
+    if request.method == "POST":
+
+        service = request.form.get("service")
+        plan = request.form.get("plan_name","")
+        phone = request.form.get("phone_number","")
+        wallet_address = request.form.get("wallet_address","")
+        gift_brand = request.form.get("gift_brand","")
+        gift_value = request.form.get("gift_value","")
+        payment_method = request.form.get("payment_method","externo")
+
+        total_cup = 0
+        extra_data = ""
+
+        if service == "Recargas":
+
+            total_cup = recharge_price(plan,promo)
+            extra_data = phone
+
+        elif service == "Gift Cards":
+
+            total_cup = gift_card_price_cup(float(gift_value),settings)
+            extra_data = f"{gift_brand} {gift_value}$"
+
+        elif service == "Cripto":
+
+            cup_amount = parse_float(request.form.get("cup_amount","0"),0)
+            total_cup = cup_amount
+            extra_data = f"{request.form.get('network')} -> {wallet_address}"
+
+        conn = get_db()
+
+        if payment_method == "wallet":
+
+            wallet = get_wallet(user["id"])
+
+            if wallet["cup_balance"] < total_cup:
+                conn.close()
+                flash("Saldo insuficiente en CUP.","error")
+                return redirect(url_for("wallet_page"))
+
+            q(conn,"UPDATE wallets SET cup_balance = cup_balance - ? WHERE user_id = ?",(total_cup,user["id"]))
+
+            add_wallet_tx(
+                user["id"],
+                "CUP",
+                total_cup,
+                "debit",
+                "purchase",
+                f"Compra {service}"
+            )
+
+            payment_status = "Pagado"
+
+        else:
+            payment_status = "Pago en revisión"
+
+        q(conn,"""
+        INSERT INTO orders
+        (user_id,customer_name,phone_number,service,plan_name,extra_data,total_cup,payment_method,status,payment_status,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """,(
+            user["id"],
+            f"{user['first_name']} {user['last_name']}",
+            phone,
+            service,
+            plan,
+            extra_data,
+            total_cup,
+            payment_method,
+            "Pendiente",
+            payment_status,
+            now_str()
+        ))
+
+        conn.commit()
+        order_id = q(conn,"SELECT last_insert_rowid()").fetchone()[0]
+        conn.close()
+
+        log_action(user["id"],"order_created",f"Order {order_id}")
+
+        if payment_method == "wallet":
+
+            flash("Pedido pagado correctamente con saldo.","success")
+            return redirect(url_for("my_orders"))
+
+        return redirect(url_for("checkout",order_id=order_id))
+
+    content = """
+<div class="page-wrap">
+<div class="container" style="max-width:800px;">
+<div class="card form-card">
+
+<h2>Nuevo pedido</h2>
+
+<form method="post">
+
+<input type="hidden" name="service" value="{{service}}">
+
+<div>
+<label>Producto</label>
+<select name="service">
+
+<option value="Recargas">Recargas</option>
+<option value="Cripto">Cripto</option>
+<option value="Gift Cards">Gift Cards</option>
+
+</select>
+</div>
+
+<div>
+<label>Plan / opción</label>
+<select name="plan_name">
+{% for p in plans %}
+<option value="{{p}}">{{p}}</option>
+{% endfor %}
+</select>
+</div>
+
+<div>
+<label>Número Cubacel</label>
+<input name="phone_number">
+</div>
+
+<div>
+<label>Método de pago</label>
+<select name="payment_method">
+<option value="externo">Transferencia</option>
+<option value="wallet">Saldo billetera</option>
+</select>
+</div>
+
+<button class="btn btn-primary">Continuar</button>
+
+</form>
+
+</div>
+</div>
+</div>
+"""
+
+    plans = [p["label"] for p in RECHARGE_OPTIONS]
+
+    return render_page(
+        content,
+        title="Nuevo pedido",
+        user=user,
+        service=service,
+        plans=plans
+    )
+
+
+@app.route("/checkout/<int:order_id>",methods=["GET","POST"])
+@login_required
+def checkout(order_id):
+
+    user = current_user()
+
+    conn = get_db()
+    order = q(conn,"SELECT * FROM orders WHERE id=?",(order_id,)).fetchone()
+    settings = get_settings()
+
+    if not order:
+        conn.close()
+        abort(404)
+
+    if request.method == "POST":
+
+        proof = request.files.get("proof")
+
+        if proof and proof.filename:
+
+            safe = secure_filename(proof.filename)
+            name = f"proof_{uuid.uuid4().hex}_{safe}"
+            path = UPLOAD_DIR / name
+
+            proof.save(path)
+
+            q(conn,"UPDATE orders SET proof_path=?,payment_status='Pago enviado' WHERE id=?",(str(path),order_id))
+            conn.commit()
+
+        conn.close()
+
+        flash("Comprobante enviado. Revisaremos el pago.","success")
+
+        return redirect(url_for("my_orders"))
+
+    card_label = settings.get("payment_card_label")
+    card_number = settings.get("payment_card_number")
+    card_holder = settings.get("payment_card_holder")
+
+    content = """
+
+<div class="page-wrap">
+<div class="container" style="max-width:760px;">
+
+<div class="card form-card">
+
+<h2>Pago del pedido</h2>
+
+<p><strong>Total:</strong> {{order['total_cup']}} CUP</p>
+
+<div class="promo-box">
+
+<p>Envía el pago a:</p>
+
+<strong>{{card_label}}</strong><br>
+{{card_number}}<br>
+{{card_holder}}
+
+</div>
+
+<form method="post" enctype="multipart/form-data">
+
+<label>Subir comprobante</label>
+<input type="file" name="proof" required>
+
+<button class="btn btn-primary">Enviar comprobante</button>
+
+</form>
+
+</div>
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Pago",user=user,order=order)
+
+
+@app.route("/my-orders")
+@login_required
+def my_orders():
+
+    user = current_user()
+
+    conn = get_db()
+
+    orders = q(conn,"SELECT * FROM orders WHERE user_id=? ORDER BY id DESC",(user["id"],)).fetchall()
+
+    conn.close()
+
+    content = """
+
+<div class="page-wrap">
+<div class="container">
+
+<h2>Mis pedidos</h2>
+
+{% if orders %}
+
+<table>
+
+<thead>
+<tr>
+<th>ID</th>
+<th>Producto</th>
+<th>Total</th>
+<th>Estado</th>
+<th>Pago</th>
+<th>Fecha</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for o in orders %}
+
+<tr>
+
+<td>#{{o['id']}}</td>
+
+<td>{{o['service']}}</td>
+
+<td>{{o['total_cup']}} CUP</td>
+
+<td>{{o['status']}}</td>
+
+<td>{{o['payment_status']}}</td>
+
+<td>{{o['created_at']}}</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+</table>
+
+{% else %}
+
+<div class="empty">Aún no tienes pedidos.</div>
+
+{% endif %}
+
+</div>
+</div>
+
+"""
+
+    return render_page(content,title="Mis pedidos",user=user,orders=orders)
+
