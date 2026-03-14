@@ -1278,7 +1278,7 @@ def register_step(step):
         1: "Escribe tu nombre real, como aparece en tu documento.",
         2: "Escribe tus apellidos completos.",
         3: "Usaremos tu correo para acceso y seguridad.",
-        4: "Debe tener al menos 6 caracteres.",
+        4: "Debe tener al menos 8 caracteres.",
         5: "Este dato quedará bloqueado después del registro.",
         6: "Selecciona tu ciudad en Cuba.",
         7: "Tu @tag será único dentro de la plataforma.",
@@ -1428,15 +1428,15 @@ def register_step(step):
 
           <form method="post">
             {% if step == 1 %}
-              <input type="text" name="first_name" placeholder="Tu nombre" value="{{ data.get('first_name', '') }}" required>
+              <input type="text" name="first_name" placeholder="Tu nombre" required>
             {% elif step == 2 %}
-              <input type="text" name="last_name" placeholder="Tus apellidos" value="{{ data.get('last_name', '') }}" required>
+              <input type="text" name="last_name" placeholder="Tus apellidos" required>
             {% elif step == 3 %}
-              <input type="email" name="email" placeholder="tucorreo@email.com" value="{{ data.get('email', '') }}" required>
+              <input type="email" name="email" placeholder="tucorreo@email.com" required>
             {% elif step == 4 %}
               <input type="password" name="password" placeholder="Tu contraseña" required>
             {% elif step == 5 %}
-              <input type="text" name="carnet" placeholder="Tu número de carnet" value="{{ data.get('carnet', '') }}" required>
+              <input type="text" name="carnet" placeholder="Tu número de carnet" required>
             {% elif step == 6 %}
               <select name="city" required>
                 <option value="">Selecciona tu ciudad</option>
@@ -1445,9 +1445,9 @@ def register_step(step):
                 {% endfor %}
               </select>
             {% elif step == 7 %}
-              <input type="text" name="profile_tag" placeholder="@miguel" value="{{ data.get('profile_tag', '') }}" required>
+              <input type="text" name="profile_tag" placeholder="@miguel" required>
             {% elif step == 8 %}
-              <input type="text" name="referral_code" placeholder="Código opcional" value="{{ data.get('referral_code', '') }}">
+              <input type="text" name="referral_code" placeholder="Código opcional">
             {% endif %}
 
             <div style="display:grid;gap:12px;">
