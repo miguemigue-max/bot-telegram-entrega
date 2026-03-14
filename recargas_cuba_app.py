@@ -2493,4 +2493,286 @@ def approve_withdraw(withdraw_id):
     flash("Retiro marcado como completado.", "success")
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/admin/settings", methods=["GET", "POST"])
+@admin_required
+def admin_settings():
+    user = current_user()
+    settings = get_settings()
 
+    if request.method == "POST":
+        conn = get_db()
+
+        for key in [
+            "usd_buy_cup",
+            "usd_sell_cup",
+            "usdt_buy_cup",
+            "usdt_sell_cup",
+            "usd_to_usdt",
+            "usdt_to_usd",
+            "referral_reward_usdt",
+            "referral_required_deposit_usd",
+            "bonus_withdraw_min_usdt",
+        ]:
+            value = request.form.get(key, "").strip()
+            if value:
+                q(conn, "UPDATE settings SET value = ? WHERE key = ?", (value, key))
+
+        conn.commit()
+        conn.close()
+
+        log_action(user["id"], "admin_update_settings")
+        flash("Configuración actualizada.", "success")
+        return redirect(url_for("admin_settings"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="panel">
+          <h2>Configuración del sistema</h2>
+
+          <form method="post">
+
+            <h3>Tasas USD</h3>
+
+            <label>USD compra (CUP)</label>
+            <input name="usd_buy_cup" value="{{ settings['usd_buy_cup'] }}">
+
+            <label>USD venta (CUP)</label>
+            <input name="usd_sell_cup" value="{{ settings['usd_sell_cup'] }}">
+
+            <h3>USDT</h3>
+
+            <label>USDT compra (CUP)</label>
+            <input name="usdt_buy_cup" value="{{ settings['usdt_buy_cup'] }}">
+
+            <label>USDT venta (CUP)</label>
+            <input name="usdt_sell_cup" value="{{ settings['usdt_sell_cup'] }}">
+
+            <h3>Conversión</h3>
+
+            <label>USD → USDT</label>
+            <input name="usd_to_usdt" value="{{ settings['usd_to_usdt'] }}">
+
+            <label>USDT → USD</label>
+            <input name="usdt_to_usd" value="{{ settings['usdt_to_usd'] }}">
+
+            <h3>Referidos</h3>
+
+            <label>Bonus USDT</label>
+            <input name="referral_reward_usdt" value="{{ settings['referral_reward_usdt'] }}">
+
+            <label>Depósito mínimo referido (USD)</label>
+            <input name="referral_required_deposit_usd" value="{{ settings['referral_required_deposit_usd'] }}">
+
+            <label>Mínimo retiro bonus (USDT)</label>
+            <input name="bonus_withdraw_min_usdt" value="{{ settings['bonus_withdraw_min_usdt'] }}">
+
+            <br><br>
+            <button class="btn btn-primary">Guardar cambios</button>
+
+          </form>
+        </div>
+      </div>
+    </div>
+    """
+
+    return render_page(
+        content,
+        title="Configuración",
+        user=user,
+        settings=settings
+    )
+
+
+@app.route("/admin/adjust_wallet", methods=["GET","POST"])
+@admin_required
+def admin_adjust_wallet():
+    user = current_user()
+
+    if request.method == "POST":
+        tag = clean_tag(request.form.get("tag",""))
+        currency = request.form.get("currency","")
+        amount = parse_float(request.form.get("amount","0"),0)
+        direction = request.form.get("direction","credit")
+
+        conn = get_db()
+        target = q(conn,"SELECT * FROM users WHERE profile_tag = ?",(tag,)).fetchone()
+        conn.close()
+
+        if not target:
+            flash("Usuario no encontrado.","error")
+            return redirect(url_for("admin_adjust_wallet"))
+
+        adjust_wallet(
+            target["id"],
+            currency,
+            amount,
+            "Ajuste admin",
+            direction,
+            "admin_adjust"
+        )
+
+        flash("Saldo ajustado correctamente.","success")
+        return redirect(url_for("admin_dashboard"))
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="panel">
+          <h2>Ajustar saldo usuario</h2>
+
+          <form method="post">
+
+            <label>@tag usuario</label>
+            <input name="tag" placeholder="@usuario">
+
+            <label>Moneda</label>
+            <select name="currency">
+              <option>USD</option>
+              <option>USDT</option>
+              <option>CUP</option>
+              <option>BONUS_USDT</option>
+            </select>
+
+            <label>Monto</label>
+            <input name="amount">
+
+            <label>Tipo</label>
+            <select name="direction">
+              <option value="credit">Agregar</option>
+              <option value="debit">Quitar</option>
+            </select>
+
+            <br><br>
+            <button class="btn btn-primary">Aplicar ajuste</button>
+
+          </form>
+        </div>
+      </div>
+    </div>
+    """
+
+    return render_page(content,title="Ajustar saldo",user=user)
+
+
+@app.route("/receipt/<int:tx_id>")
+@login_required
+def receipt(tx_id):
+    user = current_user()
+
+    conn = get_db()
+    tx = q(conn,"SELECT * FROM wallet_transactions WHERE id = ?",(tx_id,)).fetchone()
+    conn.close()
+
+    if not tx:
+        abort(404)
+
+    if tx["user_id"] != user["id"] and not user["is_admin"]:
+        abort(403)
+
+    pdf = generate_receipt_pdf(
+        "Recibo Banco Cuba",
+        [
+            f"Transacción: {tx_id}",
+            f"Tipo: {tx['tx_type']}",
+            f"Moneda: {tx['currency']}",
+            f"Monto: {tx['amount']}",
+            f"Dirección: {tx['direction']}",
+            f"Descripción: {tx['description']}",
+            f"Fecha: {tx['created_at']}"
+        ]
+    )
+
+    if not pdf:
+        flash("PDF no disponible en este servidor.","error")
+        return redirect(url_for("home"))
+
+    return send_file(
+        pdf,
+        as_attachment=True,
+        download_name=f"recibo_{tx_id}.pdf",
+        mimetype="application/pdf"
+    )
+
+def ensure_database():
+    if not DB_PATH.exists():
+        init_db()
+    else:
+        try:
+            conn = get_db()
+            q(conn, "SELECT id FROM users LIMIT 1")
+            conn.close()
+        except Exception:
+            init_db()
+
+
+ensure_database()
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "now": now_str()
+    }
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_page(
+        """
+        <div class="page-wrap">
+          <div class="container">
+            <div class="panel">
+              <h2>Acceso denegado</h2>
+              <p class="subtitle">No tienes permisos para acceder a esta página.</p>
+              <a class="btn btn-primary" href="{{ url_for('home') }}">Volver al inicio</a>
+            </div>
+          </div>
+        </div>
+        """,
+        title="403",
+        user=current_user()
+    ), 403
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_page(
+        """
+        <div class="page-wrap">
+          <div class="container">
+            <div class="panel">
+              <h2>Página no encontrada</h2>
+              <p class="subtitle">La página que buscas no existe.</p>
+              <a class="btn btn-primary" href="{{ url_for('home') }}">Volver al inicio</a>
+            </div>
+          </div>
+        </div>
+        """,
+        title="404",
+        user=current_user()
+    ), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_page(
+        """
+        <div class="page-wrap">
+          <div class="container">
+            <div class="panel">
+              <h2>Error interno</h2>
+              <p class="subtitle">Algo salió mal en el servidor.</p>
+              <a class="btn btn-primary" href="{{ url_for('home') }}">Volver al inicio</a>
+            </div>
+          </div>
+        </div>
+        """,
+        title="500",
+        user=current_user()
+    ), 500
+
+
+if __name__ == "__main__":
+    ensure_database()
+    app.run(debug=True)
