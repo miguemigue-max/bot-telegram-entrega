@@ -14,6 +14,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import secrets
+import base64
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -154,6 +155,24 @@ def wallet_field(currency):
         "BONUS_USDT": "bonus_usdt_balance",
     }[currency]
 
+def save_data_url_image(data_url, prefix="face"):
+    if not data_url or "," not in data_url:
+        return ""
+
+    header, encoded = data_url.split(",", 1)
+    ext = ".png"
+    if "image/jpeg" in header:
+        ext = ".jpg"
+    elif "image/webp" in header:
+        ext = ".webp"
+
+    filename = f"{prefix}_{uuid.uuid4().hex}{ext}"
+    file_path = UPLOAD_DIR / filename
+
+    with open(file_path, "wb") as f:
+        f.write(base64.b64decode(encoded))
+
+    return str(file_path)
 
 def ensure_wallet(user_id):
     conn = get_db()
@@ -348,6 +367,21 @@ def init_db():
     currency TEXT,
     image TEXT,
     active INTEGER DEFAULT 1
+       )
+   """)
+
+    q(conn, """
+    CREATE TABLE IF NOT EXISTS face_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT NOT NULL,
+        frame_1_path TEXT NOT NULL DEFAULT '',
+        frame_2_path TEXT NOT NULL DEFAULT '',
+        frame_3_path TEXT NOT NULL DEFAULT '',
+        verification_type TEXT NOT NULL DEFAULT 'basic_liveness',
+        status TEXT NOT NULL DEFAULT 'Pendiente',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id)
        )
    """)
 
@@ -2396,71 +2430,20 @@ def register_step(step):
                 flash("Ese @tag ya está en uso.", "error")
                 return redirect(url_for("register_step", step=7))
 
-            referred_by_user_id = None
-            if referral_code:
-                inviter = q(conn, "SELECT id FROM users WHERE referral_code = ?", (referral_code,)).fetchone()
-                if inviter:
-                    referred_by_user_id = inviter["id"]
-
-            my_ref_code = generate_referral_code()
-            while q(conn, "SELECT id FROM users WHERE referral_code = ?", (my_ref_code,)).fetchone():
-                my_ref_code = generate_referral_code()
-
-            q(conn, """
-                INSERT INTO users (
-                    first_name, last_name, carnet, email, password, city,
-                    profile_tag, profile_photo, referral_code, referred_by_user_id,
-                    is_admin, is_locked, failed_attempts, created_at, last_login_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, 0, 0, 0, ?, '')
-            """, (
-                first_name,
-                last_name,
-                carnet,
-                email,
-                generate_password_hash(password),
-                city,
-                profile_tag,
-                my_ref_code,
-                referred_by_user_id,
-                now_str(),
-            ))
-
-            user_id = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()["id"]
-
-            q(conn, """
-                INSERT INTO wallets (user_id, cup_balance, usd_balance, usdt_balance, bonus_usdt_balance, created_at)
-                VALUES (?, 0, 0, 0, 0, ?)
-            """, (user_id, now_str()))
-
-            if referred_by_user_id:
-                reward = parse_float(get_setting("referral_reward_usdt", "0.25"), 0.25)
-                required_deposit = parse_float(get_setting("referral_required_deposit_usd", "5"), 5)
-                q(conn, """
-                    INSERT INTO referrals (
-                        inviter_user_id, invited_user_id, reward_usdt, required_deposit_usd,
-                        status, activated_at, paid_at, created_at
-                    ) VALUES (?, ?, ?, ?, 'pendiente', '', '', ?)
-                """, (
-                    referred_by_user_id,
-                    user_id,
-                    reward,
-                    required_deposit,
-                    now_str(),
-                ))
-
-            conn.commit()
             conn.close()
 
-            session.pop("register_data", None)
-            session["user_id"] = user_id
-            log_action(user_id, "user_registered", "Registro completado")
-            flash("Cuenta creada correctamente.", "success")
-            send_email(
-    email,
-    "Bienvenido a XyPher",
-    f"Hola {first_name}, tu cuenta fue creada correctamente en XyPher."
-)
-            return redirect(url_for("home"))
+            session["pending_registration"] = {
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": email,
+                "password": password,
+                "carnet": carnet,
+                "city": city,
+                "profile_tag": profile_tag,
+                "referral_code": referral_code,
+            }
+
+            return redirect(url_for("register_face_check"))
 
     progress = int((step / 9) * 100)
 
@@ -2543,6 +2526,253 @@ def register_step(step):
         data=data,
         masked_carnet=mask_carnet(data.get("carnet", "")),
     )
+
+@app.route("/register/face-check", methods=["GET", "POST"])
+def register_face_check():
+    pending = session.get("pending_registration")
+
+    if not pending:
+        flash("Primero completa el registro.", "error")
+        return redirect(url_for("register_step", step=1))
+
+    if request.method == "POST":
+        frame_1 = request.form.get("frame_1", "").strip()
+        frame_2 = request.form.get("frame_2", "").strip()
+        frame_3 = request.form.get("frame_3", "").strip()
+
+        if not frame_1 or not frame_2 or not frame_3:
+            flash("No se pudo completar la verificación facial.", "error")
+            return redirect(url_for("register_face_check"))
+
+        first_name = pending["first_name"]
+        last_name = pending["last_name"]
+        email = pending["email"]
+        password = pending["password"]
+        carnet = pending["carnet"]
+        city = pending["city"]
+        profile_tag = clean_tag(pending["profile_tag"])
+        referral_code = pending["referral_code"].strip().upper()
+
+        conn = get_db()
+
+        email_exists = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        carnet_exists = q(conn, "SELECT id FROM users WHERE carnet = ?", (carnet,)).fetchone()
+        tag_exists = q(conn, "SELECT id FROM users WHERE profile_tag = ?", (profile_tag,)).fetchone()
+
+        if email_exists or carnet_exists or tag_exists:
+            conn.close()
+            flash("Ya existe una cuenta con esos datos.", "error")
+            return redirect(url_for("register_step", step=1))
+
+        referred_by_user_id = None
+        if referral_code:
+            inviter = q(conn, "SELECT id FROM users WHERE referral_code = ?", (referral_code,)).fetchone()
+            if inviter:
+                referred_by_user_id = inviter["id"]
+
+        my_ref_code = generate_referral_code()
+        while q(conn, "SELECT id FROM users WHERE referral_code = ?", (my_ref_code,)).fetchone():
+            my_ref_code = generate_referral_code()
+
+        q(conn, """
+            INSERT INTO users (
+                first_name, last_name, carnet, email, password, city,
+                profile_tag, profile_photo, referral_code, referred_by_user_id,
+                is_admin, is_locked, failed_attempts, created_at, last_login_at,
+                face_verified, face_verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, 0, 0, 0, ?, '', 1, ?)
+        """, (
+            first_name,
+            last_name,
+            carnet,
+            email,
+            generate_password_hash(password),
+            city,
+            profile_tag,
+            my_ref_code,
+            referred_by_user_id,
+            now_str(),
+            now_str(),
+        ))
+
+        user_id = q(conn, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()["id"]
+
+        q(conn, """
+            INSERT INTO wallets (user_id, cup_balance, usd_balance, usdt_balance, bonus_usdt_balance, created_at)
+            VALUES (?, 0, 0, 0, 0, ?)
+        """, (user_id, now_str()))
+
+        if referred_by_user_id:
+            reward = parse_float(get_setting("referral_reward_usdt", "0.25"), 0.25)
+            required_deposit = parse_float(get_setting("referral_required_deposit_usd", "5"), 5)
+            q(conn, """
+                INSERT INTO referrals (
+                    inviter_user_id, invited_user_id, reward_usdt, required_deposit_usd,
+                    status, activated_at, paid_at, created_at
+                ) VALUES (?, ?, ?, ?, 'pendiente', '', '', ?)
+            """, (
+                referred_by_user_id,
+                user_id,
+                reward,
+                required_deposit,
+                now_str(),
+            ))
+
+        frame_1_path = save_data_url_image(frame_1, "face1")
+        frame_2_path = save_data_url_image(frame_2, "face2")
+        frame_3_path = save_data_url_image(frame_3, "face3")
+
+        q(conn, """
+            INSERT INTO face_verifications (
+                user_id, email, frame_1_path, frame_2_path, frame_3_path,
+                verification_type, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'basic_liveness', 'Aprobado', ?)
+        """, (
+            user_id,
+            email,
+            frame_1_path,
+            frame_2_path,
+            frame_3_path,
+            now_str(),
+        ))
+
+        conn.commit()
+        conn.close()
+
+        session.pop("register_data", None)
+        session.pop("pending_registration", None)
+        session["user_id"] = user_id
+
+        send_email(
+            email,
+            "Bienvenido a XyPher",
+            f"Hola {first_name}, tu cuenta fue creada correctamente en XyPher."
+        )
+
+        flash("Verificación completada y cuenta creada correctamente.", "success")
+        return redirect(url_for("home"))
+
+    content = """
+    <div class="auth-shell">
+      <div class="auth-card panel" style="max-width:720px;">
+        <h2 style="margin:0 0 10px;">Verificación facial</h2>
+        <p class="subtitle" style="margin:0 0 18px;">
+          Para continuar, centra tu rostro, acércate y luego aléjate de la cámara.
+        </p>
+
+        <div style="background:#111;border-radius:24px;overflow:hidden;position:relative;">
+          <video id="video" autoplay playsinline style="width:100%;display:block;"></video>
+          <canvas id="canvas" style="display:none;"></canvas>
+
+          <div id="faceMessage" style="
+            position:absolute;
+            left:16px;
+            right:16px;
+            bottom:16px;
+            background:rgba(255,255,255,0.92);
+            color:#111;
+            border-radius:16px;
+            padding:14px 16px;
+            font-weight:800;
+          ">
+            Preparando cámara...
+          </div>
+        </div>
+
+        <form method="post" id="faceForm" style="margin-top:18px;">
+          <input type="hidden" name="frame_1" id="frame_1">
+          <input type="hidden" name="frame_2" id="frame_2">
+          <input type="hidden" name="frame_3" id="frame_3">
+          <button class="btn btn-primary" type="button" id="startFaceCheck">Iniciar verificación</button>
+        </form>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script>
+      const videoEl = document.getElementById("video");
+      const canvasEl = document.getElementById("canvas");
+      const messageEl = document.getElementById("faceMessage");
+      const startBtn = document.getElementById("startFaceCheck");
+      const formEl = document.getElementById("faceForm");
+
+      const frame1Input = document.getElementById("frame_1");
+      const frame2Input = document.getElementById("frame_2");
+      const frame3Input = document.getElementById("frame_3");
+
+      let challengeStep = 0;
+      let done = false;
+
+      function captureFrame(targetInput) {
+        const ctx = canvasEl.getContext("2d");
+        canvasEl.width = videoEl.videoWidth;
+        canvasEl.height = videoEl.videoHeight;
+        ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+        targetInput.value = canvasEl.toDataURL("image/png");
+      }
+
+      const faceDetection = new FaceDetection.FaceDetection({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+      });
+
+      faceDetection.setOptions({
+        model: "short",
+        minDetectionConfidence: 0.6
+      });
+
+      faceDetection.onResults((results) => {
+        if (done) return;
+
+        if (!results.detections || results.detections.length === 0) {
+          messageEl.textContent = "No detecto tu rostro. Ponte frente a la cámara.";
+          return;
+        }
+
+        const box = results.detections[0].boundingBox;
+        const width = box.width;
+
+        if (challengeStep === 0) {
+          messageEl.textContent = "Paso 1: centra tu rostro";
+          if (width > 0.18 && width < 0.32) {
+            captureFrame(frame1Input);
+            challengeStep = 1;
+          }
+        } else if (challengeStep === 1) {
+          messageEl.textContent = "Paso 2: acércate un poco más";
+          if (width >= 0.35) {
+            captureFrame(frame2Input);
+            challengeStep = 2;
+          }
+        } else if (challengeStep === 2) {
+          messageEl.textContent = "Paso 3: aléjate un poco";
+          if (width <= 0.24) {
+            captureFrame(frame3Input);
+            done = true;
+            messageEl.textContent = "Verificación completada. Enviando...";
+            setTimeout(() => formEl.submit(), 800);
+          }
+        }
+      });
+
+      startBtn.addEventListener("click", async () => {
+        startBtn.style.display = "none";
+        messageEl.textContent = "Solicitando acceso a la cámara...";
+
+        const camera = new Camera(videoEl, {
+          onFrame: async () => {
+            await faceDetection.send({image: videoEl});
+          },
+          width: 480,
+          height: 640
+        });
+
+        camera.start();
+      });
+    </script>
+    """
+    return render_page(content, title="Verificación facial", user=None)
 
 
 @app.route("/profile", methods=["GET", "POST"])
