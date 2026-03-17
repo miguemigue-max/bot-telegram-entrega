@@ -3146,7 +3146,7 @@ def transfer_money():
         currency = request.form.get("currency", "").strip().upper()
         amount = parse_float(request.form.get("amount", "0"), 0)
 
-        if not tag or currency not in {"USD", "USDT", "CUP"} or amount <= 0:
+        if not tag or currency != "USD" or amount <= 0:
             flash("Completa correctamente los datos de la transferencia.", "error")
             return redirect(url_for("transfer_money"))
 
