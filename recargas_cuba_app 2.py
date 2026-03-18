@@ -15,6 +15,9 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import secrets
 import base64
+import qrcode
+import base64
+from io import BytesIO
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -43,6 +46,7 @@ CITIES_CUBA = [
     "Guantánamo", "Isla de la Juventud"
 ]
 
+USDT_TRC20_WALLET = "TRZwbEBzg7BkxbJ4aRLqPLesp1ToivG824"
 DEPOSIT_METHODS = ["CUP", "USDT", "PIX", "MLC", "USD"]
 WITHDRAW_METHODS = ["CUP", "USDT", "PIX", "MLC", "USD"]
 
@@ -66,6 +70,12 @@ def parse_float(value, default=0.0):
         return float(str(value).replace(",", ".").strip())
     except Exception:
         return default
+
+def generate_qr_base64(data):
+    qr = qrcode.make(data)
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
 
 def send_email(to_email, subject, html_content):
     try:
@@ -3515,7 +3525,7 @@ def deposit_page():
 
     currency_destinations = {
         "CUP": settings.get("deposit_cup_card", ""),
-        "USDT": settings.get("deposit_usdt_wallet", ""),
+        "USDT": USDT_TRC20_WALLET,
         "PIX": settings.get("deposit_pix_key", ""),
         "MLC": settings.get("deposit_mlc_card", ""),
         "USD": settings.get("deposit_usd_destination", ""),
@@ -3528,6 +3538,8 @@ def deposit_page():
         "MLC": parse_float(settings.get("mlc_to_usd", "1.00"), 1.00),
         "USD": 1.0,
     }
+
+    usdt_qr_code = generate_qr_base64(USDT_TRC20_WALLET)
 
     if request.method == "POST":
         method = request.form.get("method", "").strip().upper()
@@ -3675,8 +3687,43 @@ def deposit_page():
           </div>
 
           <div class="wizard-step" id="step4" style="display:none;">
-            <div class="step-question" style="font-size:2rem;">Sube tu comprobante</div>
-            <div class="step-helper">Adjunta una captura o PDF del pago realizado.</div>
+            <div class="step-question" style="font-size:2rem;">Finalizar depósito</div>
+            <div class="step-helper">Confirma el pago y adjunta tu comprobante.</div>
+
+            <div id="usdtPaymentBox" style="display:none;">
+              <div class="panel" style="margin-top:20px;text-align:center;background:#0f1230;color:white;">
+                <h3 style="margin-top:0;color:white;">Depositar USDT (TRC20)</h3>
+
+                <p style="color:#c9c9d6;">Escanea el QR o copia la wallet</p>
+
+                <img src="data:image/png;base64,{{ usdt_qr_code }}"
+                     style="width:220px;border-radius:16px;margin:10px 0;background:white;padding:10px;">
+
+                <div style="margin-top:10px;font-size:14px;">
+                  <strong>Wallet:</strong><br>
+                  <span style="word-break:break-all;">{{ usdt_wallet }}</span>
+                </div>
+
+                <div style="margin-top:10px;">
+                  <strong>Monto a enviar:</strong><br>
+                  <span id="usdt_exact_amount">0.000000</span> USDT
+                </div>
+
+                <div style="
+                  margin-top:15px;
+                  padding:12px;
+                  background:#3a1830;
+                  border-radius:12px;
+                  font-size:13px;
+                  color:#ffb7c5;
+                ">
+                  ⚠️ Envía solo USDT en red TRC20<br>
+                  ⚠️ No envíes menos ni más del monto<br>
+                  ⚠️ No envíes otra moneda ni otra red<br>
+                  ⚠️ El depósito se acreditará cuando sea validado
+                </div>
+              </div>
+            </div>
 
             <div>
               <label>Comprobante</label>
@@ -3716,6 +3763,9 @@ def deposit_page():
       const reviewUsd = document.getElementById("review_usd");
       const reviewDestination = document.getElementById("review_destination");
 
+      const usdtPaymentBox = document.getElementById("usdtPaymentBox");
+      const usdtExactAmount = document.getElementById("usdt_exact_amount");
+
       const nextStep1 = document.getElementById("nextStep1");
       const nextStep2 = document.getElementById("nextStep2");
       const nextStep3 = document.getElementById("nextStep3");
@@ -3736,21 +3786,11 @@ def deposit_page():
       function calculateUsd(method, amount) {
         if (!method || !amount || amount <= 0) return 0;
 
-        if (method === "CUP") {
-          return amount / rates.CUP;
-        }
-        if (method === "PIX") {
-          return amount / rates.PIX;
-        }
-        if (method === "USDT") {
-          return amount * rates.USDT;
-        }
-        if (method === "MLC") {
-          return amount * rates.MLC;
-        }
-        if (method === "USD") {
-          return amount;
-        }
+        if (method === "CUP") return amount / rates.CUP;
+        if (method === "PIX") return amount / rates.PIX;
+        if (method === "USDT") return amount * rates.USDT;
+        if (method === "MLC") return amount * rates.MLC;
+        if (method === "USD") return amount;
         return 0;
       }
 
@@ -3805,6 +3845,12 @@ def deposit_page():
       });
 
       nextStep3.addEventListener("click", function () {
+        if (selectedMethod === "USDT") {
+          usdtPaymentBox.style.display = "block";
+          usdtExactAmount.textContent = selectedAmount.toFixed(6);
+        } else {
+          usdtPaymentBox.style.display = "none";
+        }
         showStep(4);
       });
 
@@ -3820,9 +3866,10 @@ def deposit_page():
         title="Depositar",
         user=user,
         rates=rates,
-        currency_destinations=currency_destinations
+        currency_destinations=currency_destinations,
+        usdt_qr_code=usdt_qr_code,
+        usdt_wallet=USDT_TRC20_WALLET
     )
-
 
 @app.route("/withdraw", methods=["GET", "POST"])
 @login_required
