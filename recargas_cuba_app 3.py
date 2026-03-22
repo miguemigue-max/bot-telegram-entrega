@@ -501,6 +501,34 @@ def init_db():
     conn = get_db()
 
     q(conn, """
+            INSERT INTO remittances (
+                user_id, direction, send_currency, receive_currency,
+                send_amount, receive_amount, province, receiver_name,
+                receiver_phone, delivery_method, receiver_card,
+                receiver_pix_key, delivery_address, payment_method,
+                detail, status, created_at, rate_used
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?)
+        """, (
+            user["id"],
+            direction,
+            send_currency,
+            receive_currency,
+            amount,
+            receive_amount,
+            province,
+            receiver_name,
+            receiver_phone,
+            delivery_method,
+            receiver_card,
+            receiver_pix_key,
+            delivery_address,
+            payment_method,
+            detail,
+            now_str(),
+            rate_used
+        ))
+
+    q(conn, """
         CREATE TABLE IF NOT EXISTS remittances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -2424,6 +2452,159 @@ def home():
     </section>
     """
     return render_page(content, title="XyPher", user=None)
+
+@app.route("/admin/remittance-rates", methods=["GET", "POST"])
+@admin_required
+def admin_remittance_rates():
+    user = current_user()
+
+    if request.method == "POST":
+        direction = request.form.get("direction", "").strip()
+        delivery_method = request.form.get("delivery_method", "").strip()
+        min_amount = parse_float(request.form.get("min_amount", "0"), 0)
+        max_amount = parse_float(request.form.get("max_amount", "0"), 0)
+        rate = parse_float(request.form.get("rate", "0"), 0)
+
+        if direction not in {"BR_TO_CUBA", "CUBA_TO_BR"}:
+            flash("Dirección inválida.", "error")
+            return redirect(url_for("admin_remittance_rates"))
+
+        if not delivery_method or rate <= 0 or max_amount < min_amount:
+            flash("Completa correctamente los datos.", "error")
+            return redirect(url_for("admin_remittance_rates"))
+
+        conn = get_db()
+        q(conn, """
+            INSERT INTO remittance_rates
+            (direction, delivery_method, min_amount, max_amount, rate, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        """, (
+            direction,
+            delivery_method,
+            min_amount,
+            max_amount,
+            rate,
+            now_str()
+        ))
+        conn.commit()
+        conn.close()
+
+        flash("Tasa de remesa agregada correctamente.", "success")
+        return redirect(url_for("admin_remittance_rates"))
+
+    conn = get_db()
+    rates = q(conn, """
+        SELECT *
+        FROM remittance_rates
+        ORDER BY direction, delivery_method, min_amount ASC
+    """).fetchall()
+    conn.close()
+
+    content = """
+    <div class="page-wrap">
+      <div class="container">
+        <div class="panel">
+          <h2>Tasas de remesas</h2>
+          <p class="subtitle">Controla las tasas por dirección, método y tramo.</p>
+
+          <form method="post">
+            <label>Dirección</label>
+            <select name="direction" required>
+              <option value="BR_TO_CUBA">Brasil → Cuba</option>
+              <option value="CUBA_TO_BR">Cuba → Brasil</option>
+            </select>
+
+            <label>Método</label>
+            <select name="delivery_method" required>
+              <option value="Transferencia">Transferencia</option>
+              <option value="Efectivo">Efectivo</option>
+              <option value="Recogida">Recogida</option>
+              <option value="PIX">PIX</option>
+            </select>
+
+            <label>Monto mínimo</label>
+            <input type="text" name="min_amount" required>
+
+            <label>Monto máximo</label>
+            <input type="text" name="max_amount" required>
+
+            <label>Tasa</label>
+            <input type="text" name="rate" required>
+
+            <br><br>
+            <button class="btn btn-primary" type="submit">Agregar tasa</button>
+          </form>
+        </div>
+
+        <div class="panel" style="margin-top:20px;">
+          <h3>Tabla de tasas</h3>
+          {% if rates %}
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Dirección</th>
+                <th>Método</th>
+                <th>Mínimo</th>
+                <th>Máximo</th>
+                <th>Tasa</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in rates %}
+              <tr>
+                <td>{{ r["id"] }}</td>
+                <td>{{ r["direction"] }}</td>
+                <td>{{ r["delivery_method"] }}</td>
+                <td>{{ "%.2f"|format(r["min_amount"]) }}</td>
+                <td>{{ "%.2f"|format(r["max_amount"]) }}</td>
+                <td>{{ "%.6f"|format(r["rate"]) }}</td>
+                <td>
+                  {% if r["active"] %}
+                    <span class="status status-aprobado">Activa</span>
+                  {% else %}
+                    <span class="status status-rechazado">Inactiva</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a class="btn btn-secondary btn-sm" href="{{ url_for('toggle_remittance_rate', rate_id=r['id']) }}">
+                    {% if r["active"] %}Desactivar{% else %}Activar{% endif %}
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+            <div class="empty">Todavía no hay tasas configuradas.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    """
+
+    return render_page(content, title="Tasas remesas", user=user, rates=rates)
+
+@app.route("/admin/toggle-remittance-rate/<int:rate_id>")
+@admin_required
+def toggle_remittance_rate(rate_id):
+    conn = get_db()
+    row = q(conn, "SELECT * FROM remittance_rates WHERE id = ?", (rate_id,)).fetchone()
+
+    if not row:
+        conn.close()
+        flash("Tasa no encontrada.", "error")
+        return redirect(url_for("admin_remittance_rates"))
+
+    new_value = 0 if row["active"] else 1
+    q(conn, "UPDATE remittance_rates SET active = ? WHERE id = ?", (new_value, rate_id))
+    conn.commit()
+    conn.close()
+
+    flash("Estado de la tasa actualizado.", "success")
+    return redirect(url_for("admin_remittance_rates"))
 
 @app.route("/admin/user/<int:user_id>")
 @admin_required
@@ -6131,6 +6312,7 @@ def admin_dashboard():
             <div class="subtitle">Control de usuarios, depósitos, retiros y notificaciones.</div>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <a class="btn btn-secondary" href="{{ url_for('admin_remittance_rates') }}">Tasas remesas</a>
             <a class="btn btn-secondary" href="{{ url_for('admin_settings') }}">Configuración</a>
             <a class="btn btn-primary" href="{{ url_for('admin_broadcast') }}">Enviar notificación</a>
           </div>
